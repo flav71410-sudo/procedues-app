@@ -43,12 +43,6 @@ export default function AppShell({
             📋 Consignes
           </Link>
 
-          <Link
-  href="/journal"
-  className="block rounded-xl px-4 py-3 hover:bg-white/15"
->
-  📋 Journal d'activité
-</Link>
 
           <Link
             href="/securite"

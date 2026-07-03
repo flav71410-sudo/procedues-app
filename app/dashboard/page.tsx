@@ -1,10 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import AppShell from "../../components/AppShell";
-import ProtectedRoute from "../../components/ProtectedRoute";
-import { supabase } from "@/lib/supabase";
-
+import AppShell from "@/components/AppShell";
+import DashboardStats from "@/components/dashboard/dashboardstats";
+import Card from "@/components/ui/card";
 
 type Consigne = {
   id: string;
@@ -12,65 +11,112 @@ type Consigne = {
   fichier_url: string | null;
 };
 
+type Activite = {
+  id: string;
+  utilisateur_nom: string | null;
+  action: string;
+  module: string;
+  details: string | null;
+  created_at: string;
+};
+
+import { supabase } from "@/lib/supabase";
+
 export default function Dashboard() {
-  const [total, setTotal] = useState(0);
-  const [critiques, setCritiques] = useState(0);
-  const [hautes, setHautes] = useState(0);
-  const [fichiers, setFichiers] = useState(0);
+  const [consignes, setConsignes] = useState<Consigne[]>([]);
+  const [utilisateurs, setUtilisateurs] = useState(0);
+
 
   useEffect(() => {
-    async function chargerStats() {
-      const { data, error } = await supabase
+    async function chargerDashboard() {
+      const { data: consignesData } = await supabase
         .from("consignes")
         .select("id, priorite, fichier_url");
 
-      if (error) {
-        console.error(error);
-        return;
-      }
+      const { data: profilsData } = await supabase
+        .from("profils")
+        .select("id");
 
-      const consignes = (data || []) as Consigne[];
+     
 
-      setTotal(consignes.length);
-      setCritiques(consignes.filter((c) => c.priorite === "critique").length);
-      setHautes(consignes.filter((c) => c.priorite === "haute").length);
-      setFichiers(consignes.filter((c) => c.fichier_url).length);
+      setConsignes(consignesData || []);
+      setUtilisateurs(profilsData?.length || 0);
     }
 
-    chargerStats();
+    chargerDashboard();
   }, []);
 
+  const totalConsignes = consignes.length;
+  const critiques = consignes.filter((c) => c.priorite === "critique").length;
+  const hautes = consignes.filter((c) => c.priorite === "haute").length;
+  const fichiers = consignes.filter((c) => c.fichier_url).length;
+
   return (
-    <ProtectedRoute>
-      <AppShell>
-        <h1 className="text-3xl font-bold text-gray-900">Tableau de bord</h1>
-
+    <AppShell>
+      <div>
+        <h1 className="text-3xl font-bold text-gray-900">
+          Tableau de bord
+        </h1>
         <p className="mt-2 text-gray-600">
-          Vue d’ensemble des consignes permanentes.
+          Vue générale de l’activité du logiciel.
         </p>
+      </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mt-8">
-          <div className="bg-white rounded-2xl shadow p-6">
-            <p className="text-sm text-gray-500">Consignes actives</p>
-            <p className="text-4xl font-bold mt-3 text-gray-900">{total}</p>
-          </div>
+      <DashboardStats
+        totalConsignes={totalConsignes}
+        critiques={critiques}
+        hautes={hautes}
+        fichiers={fichiers}
+        utilisateurs={utilisateurs}
+        activites={0}
+      />
 
-          <div className="bg-white rounded-2xl shadow p-6">
-            <p className="text-sm text-gray-500">Critiques</p>
-            <p className="text-4xl font-bold mt-3 text-red-600">{critiques}</p>
-          </div>
+     <div className="mt-8">
+    <Card
+        title="Alertes"
+        subtitle="Points à surveiller"
+    >
+        <div className="space-y-4 text-sm">
 
-          <div className="bg-white rounded-2xl shadow p-6">
-            <p className="text-sm text-gray-500">Priorité haute</p>
-            <p className="text-4xl font-bold mt-3 text-orange-500">{hautes}</p>
-          </div>
+            <div className="rounded-xl bg-red-50 text-red-700 p-4">
+                🚨 {critiques} consigne(s) critique(s)
+            </div>
 
-          <div className="bg-white rounded-2xl shadow p-6">
-            <p className="text-sm text-gray-500">Fichiers joints</p>
-            <p className="text-4xl font-bold mt-3 text-[#0078b8]">{fichiers}</p>
-          </div>
+            <div className="rounded-xl bg-orange-50 text-orange-700 p-4">
+                ⚠️ {hautes} consigne(s) priorité haute
+            </div>
+
+            <div className="rounded-xl bg-blue-50 text-blue-700 p-4">
+                📎 {fichiers} document(s) joint(s)
+            </div>
+
+            <div className="rounded-xl bg-green-50 text-green-700 p-4">
+                👥 {utilisateurs} utilisateur(s)
+            </div>
+
         </div>
-      </AppShell>
-    </ProtectedRoute>
+    </Card>
+</div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mt-8">
+        <Card title="Prochains modules" subtitle="Développement prévu">
+          <ul className="space-y-3 text-gray-700">
+            <li>📄 Documents</li>
+            <li>🛠 Maintenance</li>
+            <li>🛡 Sécurité</li>
+            <li>📅 Planning réglementaire</li>
+          </ul>
+        </Card>
+
+        <Card title="État du logiciel" subtitle="Version actuelle">
+          <div className="space-y-3 text-gray-700">
+            <p>✅ Authentification opérationnelle</p>
+            <p>✅ Consignes opérationnelles</p>
+            <p>✅ Journal d’activité opérationnel</p>
+            <p>✅ Administration en cours</p>
+          </div>
+        </Card>
+      </div>
+    </AppShell>
   );
 }
