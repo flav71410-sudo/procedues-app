@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
 import DashboardStats from "@/components/dashboard/dashboardstats";
 import Card from "@/components/ui/card";
+import AlertBox from "@/components/ui/AlertBox";
 
 type Consigne = {
   id: string;
@@ -54,10 +55,10 @@ export default function Dashboard() {
   return (
     <AppShell>
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
           Tableau de bord
         </h1>
-        <p className="mt-2 text-gray-600">
+        <p className="mt-2 text-gray-600 dark:text-slate-400">
           Vue générale de l’activité du logiciel.
         </p>
       </div>
@@ -79,19 +80,21 @@ export default function Dashboard() {
         <div className="space-y-4 text-sm">
 
             <div className="rounded-xl bg-red-50 text-red-700 p-4">
-                🚨 {critiques} consigne(s) critique(s)
-            </div>
+               <AlertBox variant="danger">
+  🚨 {critiques} consigne(s) critique(s)
+</AlertBox>
 
-            <div className="rounded-xl bg-orange-50 text-orange-700 p-4">
-                ⚠️ {hautes} consigne(s) priorité haute
-            </div>
+<AlertBox variant="warning">
+  ⚠️ {hautes} consigne(s) priorité haute
+</AlertBox>
 
-            <div className="rounded-xl bg-blue-50 text-blue-700 p-4">
-                📎 {fichiers} document(s) joint(s)
-            </div>
+<AlertBox variant="info">
+  📎 {fichiers} document(s) joint(s)
+</AlertBox>
 
-            <div className="rounded-xl bg-green-50 text-green-700 p-4">
-                👥 {utilisateurs} utilisateur(s)
+<AlertBox variant="success">
+  👥 {utilisateurs} utilisateur(s)
+</AlertBox>
             </div>
 
         </div>
