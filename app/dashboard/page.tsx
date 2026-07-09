@@ -5,6 +5,8 @@ import AppShell from "@/components/AppShell";
 import DashboardStats from "@/components/dashboard/dashboardstats";
 import Card from "@/components/ui/card";
 import AlertBox from "@/components/ui/AlertBox";
+import { AppMetricRow } from "@/components/ui";
+import { Siren, TriangleAlert, FileText, Users } from "lucide-react";
 
 type Consigne = {
   id: string;
@@ -72,33 +74,40 @@ export default function Dashboard() {
         activites={0}
       />
 
-     <div className="mt-8">
-    <Card
-        title="Alertes"
-        subtitle="Points à surveiller"
-    >
-        <div className="space-y-4 text-sm">
+    <div className="mt-8 rounded-2xl border border-slate-800 bg-slate-950 p-6 shadow-lg">
 
-            <div className="rounded-xl bg-red-50 text-red-700 p-4">
-               <AlertBox variant="danger">
-  🚨 {critiques} consigne(s) critique(s)
-</AlertBox>
+    <h2 className="text-xl font-bold text-white">
+        Alertes
+    </h2>
 
-<AlertBox variant="warning">
-  ⚠️ {hautes} consigne(s) priorité haute
-</AlertBox>
+    <p className="mb-6 text-sm text-slate-400">
+        Points à surveiller
+    </p>
 
-<AlertBox variant="info">
-  📎 {fichiers} document(s) joint(s)
-</AlertBox>
+    <div className="space-y-3">
 
-<AlertBox variant="success">
-  👥 {utilisateurs} utilisateur(s)
-</AlertBox>
-            </div>
+        <AlertBox variant="danger">
+            <span className="font-bold text-red-400">{critiques}</span>
+            <span className="ml-2">consigne(s) critique(s)</span>
+        </AlertBox>
 
-        </div>
-    </Card>
+        <AlertBox variant="warning">
+            <span className="font-bold text-orange-400">{hautes}</span>
+            <span className="ml-2">consigne(s) priorité haute</span>
+        </AlertBox>
+
+        <AlertBox variant="info">
+            <span className="font-bold text-blue-400">{fichiers}</span>
+            <span className="ml-2">document(s) joint(s)</span>
+        </AlertBox>
+
+        <AlertBox variant="success">
+            <span className="font-bold text-emerald-400">{utilisateurs}</span>
+            <span className="ml-2">utilisateur(s)</span>
+        </AlertBox>
+
+    </div>
+
 </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mt-8">

@@ -9,13 +9,13 @@ type Props = {
 
 export default function AppShell({ children }: Props) {
   return (
-    <div className="flex min-h-screen bg-gray-100 dark:bg-slate-950">
+    <div className="flex min-h-screen bg-gray-100 dark:bg-slate-950 text-gray-900 dark:text-white">
       <Sidebar />
 
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header />
 
-        <main className="flex-1 overflow-y-auto p-8 text-gray-900 dark:text-white">
+        <main className="flex-1 overflow-y-auto p-8">
           {children}
         </main>
       </div>

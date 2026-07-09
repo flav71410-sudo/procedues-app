@@ -1,6 +1,9 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
 
 
 @theme inline {
@@ -126,4 +129,33 @@
   html {
     @apply font-sans;
   }
+}
+.dark .bg-white {
+  background-color: #0f172a;
+}
+
+.dark .text-gray-900 {
+  color: #ffffff;
+}
+
+.dark .text-gray-800,
+.dark .text-gray-700,
+.dark .text-gray-600 {
+  color: #cbd5e1;
+}
+
+.dark .text-gray-500,
+.dark .text-gray-400 {
+  color: #94a3b8;
+}
+
+.dark .border-gray-200,
+.dark .border-gray-100,
+.dark .border-gray-300 {
+  border-color: #334155;
+}
+
+.dark .bg-gray-100,
+.dark .bg-gray-50 {
+  background-color: #1e293b;
 }
