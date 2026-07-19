@@ -4,13 +4,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
-import { navigation } from "@/lib/navigation";
 
-type Item = {
-  label: string;
-  href: string;
-  icon: React.ElementType;
-};
+import { navigation, NavigationItem } from "@/lib/navigation";
+import { useAuth } from "@/providers/AuthProvider";
+
+type Item = NavigationItem;
 
 function SidebarLink({ item }: { item: Item }) {
   const pathname = usePathname();
@@ -44,6 +42,8 @@ function SidebarSection({
 }) {
   const [open, setOpen] = useState(defaultOpen);
 
+  if (items.length === 0) return null;
+
   return (
     <div>
       <button
@@ -51,13 +51,21 @@ function SidebarSection({
         className="flex w-full items-center justify-between rounded-xl px-4 py-3 text-sm font-bold text-blue-50 hover:bg-white/10"
       >
         <span>{title}</span>
-        {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+
+        {open ? (
+          <ChevronDown size={16} />
+        ) : (
+          <ChevronRight size={16} />
+        )}
       </button>
 
       {open && (
         <div className="mt-2 ml-3 space-y-1 border-l border-white/20 pl-3">
           {items.map((item) => (
-            <SidebarLink key={item.href} item={item} />
+            <SidebarLink
+              key={item.href}
+              item={item}
+            />
           ))}
         </div>
       )}
@@ -67,49 +75,79 @@ function SidebarSection({
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const { role } = useAuth();
 
-  const exploitationOpen = navigation.exploitation.some(
+  if (!role) return null;
+
+  const accueil = navigation.accueil.filter((item) =>
+    item.roles.includes(role)
+  );
+
+  const exploitation = navigation.exploitation.filter((item) =>
+    item.roles.includes(role)
+  );
+
+  const administration = navigation.administration.filter((item) =>
+    item.roles.includes(role)
+  );
+
+  const exploitationOpen = exploitation.some(
     (item) => pathname === item.href
   );
 
   const adminOpen = pathname.startsWith("/admin");
 
   return (
-    <aside className="w-72 min-h-screen bg-[#0078B8] text-white p-6 flex flex-col">
+    <aside className="flex min-h-screen w-72 flex-col bg-[#0078B8] p-6 text-white">
       <div className="mb-8">
         <img
           src="/logo.png"
           alt="Castorama"
-          className="w-48 mb-4 rounded-lg"
+          className="mb-4 w-48 rounded-lg"
         />
 
-        <h1 className="text-xl font-bold leading-tight">CastoManager</h1>
+        <h1 className="text-xl font-bold leading-tight">
+          CastoManager
+        </h1>
 
-        <p className="text-sm text-blue-100">Castorama Claye-Souilly</p>
+        <p className="text-sm text-blue-100">
+          Castorama Claye-Souilly
+        </p>
       </div>
 
       <nav className="flex-1 space-y-5">
-        {navigation.accueil.map((item) => (
-          <SidebarLink key={item.href} item={item} />
+        {accueil.map((item) => (
+          <SidebarLink
+            key={item.href}
+            item={item}
+          />
         ))}
 
         <SidebarSection
           title="Exploitation"
-          items={navigation.exploitation}
+          items={exploitation}
           defaultOpen={exploitationOpen}
         />
 
         <SidebarSection
           title="Administration"
-          items={navigation.administration}
+          items={administration}
           defaultOpen={adminOpen}
         />
       </nav>
 
       <div className="mt-6 rounded-2xl bg-white/10 p-4">
-        <p className="text-sm font-bold">Flavien Ruhaut</p>
-        <p className="text-xs text-blue-100">Responsable sécurité</p>
-        <p className="mt-2 text-xs text-green-200">● Connecté</p>
+        <p className="text-sm font-bold">
+          Flavien Ruhaut
+        </p>
+
+        <p className="text-xs text-blue-100">
+          {role}
+        </p>
+
+        <p className="mt-2 text-xs text-green-200">
+          ● Connecté
+        </p>
       </div>
     </aside>
   );

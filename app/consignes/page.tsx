@@ -1,13 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactElement } from "react";
 import AppShell from "@/components/AppShell";
 import { supabase } from "@/lib/supabase";
 import ConsigneCard, { Consigne } from "@/components/consignes/ConsigneCard";
 import ConsigneForm from "@/components/consignes/ConsigneForm";
 import { ajouterJournal } from "@/services/journal";
+import AccessControl from "@/components/auth/AccessControl";
+import { useAuth } from "@/providers/AuthProvider";
 
-export default function ConsignesPage() {
+
+
+export default function ConsignesPage(): ReactElement {
   const [consignes, setConsignes] = useState<Consigne[]>([]);
   const [titre, setTitre] = useState("");
   const [contenu, setContenu] = useState("");
@@ -21,6 +25,7 @@ export default function ConsignesPage() {
   const [recherche, setRecherche] = useState("");
   const [filtreCategorie, setFiltreCategorie] = useState("Toutes");
   const [filtrePriorite, setFiltrePriorite] = useState("Toutes");
+  const { role } = useAuth();
 
   async function chargerConsignes() {
     const { data, error } = await supabase
@@ -239,24 +244,26 @@ export default function ConsignesPage() {
         </select>
       </div>
 
-      <ConsigneForm
-        titre={titre}
-        contenu={contenu}
-        categorie={categorie}
-        priorite={priorite}
-        secteur={secteur}
-        fichier={fichier}
-        loading={loading}
-        editingId={editingId}
-        setTitre={setTitre}
-        setContenu={setContenu}
-        setCategorie={setCategorie}
-        setPriorite={setPriorite}
-        setSecteur={setSecteur}
-        setFichier={setFichier}
-        onSubmit={editingId ? modifierConsigne : ajouterConsigne}
-        onCancel={resetForm}
-      />
+     <AccessControl role={role} roles={["ADMIN", "DM"]}>
+  <ConsigneForm
+    titre={titre}
+    contenu={contenu}
+    categorie={categorie}
+    priorite={priorite}
+    secteur={secteur}
+    fichier={fichier}
+    loading={loading}
+    editingId={editingId}
+    setTitre={setTitre}
+    setContenu={setContenu}
+    setCategorie={setCategorie}
+    setPriorite={setPriorite}
+    setSecteur={setSecteur}
+    setFichier={setFichier}
+    onSubmit={editingId ? modifierConsigne : ajouterConsigne}
+    onCancel={resetForm}
+  />
+</AccessControl>
 
       <div className="mt-8 space-y-4">
         {consignesFiltrees.length === 0 && (

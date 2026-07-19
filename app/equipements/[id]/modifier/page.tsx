@@ -13,6 +13,7 @@ import {
   AppSelect,
   AppTextarea,
 } from "@/components/ui";
+import { useAuth } from "@/providers/AuthProvider";
 
 type RefItem = {
   id: string;
@@ -20,8 +21,12 @@ type RefItem = {
 };
 
 export default function ModifierEquipementPage() {
+  
   const params = useParams();
-  const id = params.id as string;
+const id = params.id as string;
+
+const { role } = useAuth();
+const canEdit = role === "ADMIN" || role === "DM";
 
   const [types, setTypes] = useState<RefItem[]>([]);
   const [secteurs, setSecteurs] = useState<RefItem[]>([]);
@@ -42,6 +47,7 @@ export default function ModifierEquipementPage() {
   const [prochaineVerification, setProchaineVerification] = useState("");
   const [etat, setEtat] = useState("En service");
   const [observations, setObservations] = useState("");
+  
 
   async function chargerDonnees() {
     const { data: equipement } = await supabase

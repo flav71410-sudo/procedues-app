@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { supabase } from "@/lib/supabase";
 import { ajouterJournal } from "@/services/journal";
+import { useAuth } from "@/providers/AuthProvider";
 
 type Intervention = {
   id: string;
@@ -21,6 +22,9 @@ type Intervention = {
 };
 
 export default function MaintenancePage() {
+  const { role } = useAuth();
+
+const canEdit = role === "ADMIN" || role === "DM";
   const [interventions, setInterventions] = useState<Intervention[]>([]);
   const [recherche, setRecherche] = useState("");
   const [loading, setLoading] = useState(false);
@@ -63,6 +67,10 @@ export default function MaintenancePage() {
   }
 
   async function ajouterIntervention() {
+    if (!canEdit) {
+  alert("Vous n'êtes pas autorisé.");
+  return;
+}
     if (!titre.trim() || !description.trim()) {
       alert("Merci de renseigner le titre et la description.");
       return;
@@ -101,6 +109,9 @@ export default function MaintenancePage() {
   }
 
   async function modifierStatut(id: string, nouveauStatut: string) {
+    if (!canEdit) {
+  return;
+}
     const { error } = await supabase
       .from("maintenance_interventions")
       .update({ statut: nouveauStatut })
@@ -121,6 +132,9 @@ export default function MaintenancePage() {
   }
 
   async function supprimerIntervention(intervention: Intervention) {
+    if (!canEdit) {
+  return;
+}
     if (!confirm(`Supprimer "${intervention.titre}" ?`)) return;
 
     const { error } = await supabase
@@ -195,10 +209,11 @@ export default function MaintenancePage() {
       </div>
 
       <div className="mt-8 bg-white rounded-2xl shadow p-6">
+        {canEdit && (
         <h2 className="text-lg font-bold text-gray-900 mb-4">
           Ajouter une intervention
         </h2>
-
+)}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <select
             className="border rounded-xl p-3 text-gray-900"
@@ -368,12 +383,14 @@ export default function MaintenancePage() {
                 </td>
 
                 <td className="p-4">
-                  <button
-                    onClick={() => supprimerIntervention(i)}
-                    className="bg-red-600 hover:bg-red-700 text-white rounded-lg px-3 py-2"
-                  >
-                    Supprimer
-                  </button>
+                  {canEdit && (
+    <button
+        onClick={() => supprimerIntervention(i)}
+        className="bg-red-600 hover:bg-red-700 text-white rounded-lg px-3 py-2"
+    >
+        Supprimer
+    </button>
+)}
                 </td>
               </tr>
             ))}

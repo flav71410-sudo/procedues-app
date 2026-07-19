@@ -159,3 +159,11 @@
 .dark .bg-gray-50 {
   background-color: #1e293b;
 }
+select {
+  color-scheme: dark;
+}
+
+select option {
+  background-color: #0f172a;
+  color: #ffffff;
+}

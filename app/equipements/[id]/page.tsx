@@ -17,6 +17,7 @@ import EquipmentDocuments from "@/components/equipements/EquipmentDocuments";
 import EquipmentHistory from "@/components/equipements/EquipmentHistory";
 import EquipmentVerifications from "@/components/equipements/EquipmentVerifications";
 import EquipmentLocation from "@/components/equipements/EquipmentLocation";
+import { useAuth } from "@/providers/AuthProvider";
 
 type Equipement = {
   id: string;
@@ -53,6 +54,9 @@ type Photo = {
 };
 
 export default function EquipementDetailPage() {
+  const { role } = useAuth();
+
+const canEdit = role === "ADMIN" || role === "DM";
   const params = useParams();
   const id = params.id as string;
 
@@ -148,23 +152,25 @@ export default function EquipementDetailPage() {
         title={`${equipement.numero} — ${equipement.nom}`}
         subtitle="Fiche détaillée de l’équipement."
         actions={
-          <>
-            <AppButton
-              variant="secondary"
-              onClick={() => (window.location.href = "/equipements/liste")}
-            >
-              Retour
-            </AppButton>
+  <>
+    <AppButton
+      variant="secondary"
+      onClick={() => (window.location.href = "/equipements/liste")}
+    >
+      Retour
+    </AppButton>
 
-            <AppButton
-              onClick={() =>
-                (window.location.href = `/equipements/${equipement.id}/modifier`)
-              }
-            >
-              Modifier
-            </AppButton>
-          </>
+    {canEdit && (
+      <AppButton
+        onClick={() =>
+          (window.location.href = `/equipements/${equipement.id}/modifier`)
         }
+      >
+        Modifier
+      </AppButton>
+    )}
+  </>
+}
       >
         <AppCard>
           <div className="flex flex-wrap items-center gap-4">

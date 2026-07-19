@@ -1,9 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import {
+  ImageIcon,
+  Map,
+  MapPinned,
+  Trash2,
+  Upload,
+} from "lucide-react";
+
 import AppShell from "@/components/AppShell";
-import { supabase } from "@/lib/supabase";
+import AccessControl from "@/components/auth/AccessControl";
 import {
   AppButton,
   AppCard,
@@ -11,9 +19,10 @@ import {
   AppInput,
   AppPage,
 } from "@/components/ui";
+import { supabase } from "@/lib/supabase";
 import { useDialog } from "@/providers/DialogProvider";
 import { useToast } from "@/providers/ToastProvider";
-import { Map, Trash2, ExternalLink, ImageIcon } from "lucide-react";
+import { useAuth } from "@/providers/AuthProvider";
 
 type Plan = {
   id: string;
@@ -34,30 +43,55 @@ type EquipementPlan = {
 export default function PlansPage() {
   const dialog = useDialog();
   const toast = useToast();
+  const { role } = useAuth();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const peutAjouterPlan = role === "ADMIN" || role === "DM";
+  const peutSupprimerPlan = role === "ADMIN";
 
   const [plans, setPlans] = useState<Plan[]>([]);
   const [equipements, setEquipements] = useState<EquipementPlan[]>([]);
   const [nom, setNom] = useState("");
   const [fichier, setFichier] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingPlans, setLoadingPlans] = useState(true);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   async function chargerPlans() {
-    const { data: plansData, error: plansError } = await supabase
-      .from("plans")
-      .select("*")
-      .order("created_at", { ascending: false });
+    setLoadingPlans(true);
 
-    const { data: equipementsData } = await supabase
-      .from("equipements")
-      .select("id, plan_id, etat");
+    const [
+      { data: plansData, error: plansError },
+      { data: equipementsData, error: equipementsError },
+    ] = await Promise.all([
+      supabase
+        .from("plans")
+        .select(
+          "id, nom, image_url, image_path, largeur, hauteur, created_at"
+        )
+        .order("created_at", { ascending: false }),
+
+      supabase
+        .from("equipements")
+        .select("id, plan_id, etat"),
+    ]);
 
     if (plansError) {
-      toast.error("Erreur chargement plans", plansError.message);
+      toast.error("Erreur de chargement", plansError.message);
+      setLoadingPlans(false);
       return;
+    }
+
+    if (equipementsError) {
+      toast.error(
+        "Erreur de chargement des équipements",
+        equipementsError.message
+      );
     }
 
     setPlans(plansData || []);
     setEquipements(equipementsData || []);
+    setLoadingPlans(false);
   }
 
   useEffect(() => {
@@ -65,232 +99,414 @@ export default function PlansPage() {
   }, []);
 
   function equipementsDuPlan(planId: string) {
-    return equipements.filter((e) => e.plan_id === planId);
+    return equipements.filter((equipement) => equipement.plan_id === planId);
   }
 
   function compterEtat(planId: string, etat: string) {
-    return equipementsDuPlan(planId).filter((e) => e.etat === etat).length;
+    return equipementsDuPlan(planId).filter(
+      (equipement) => equipement.etat === etat
+    ).length;
+  }
+
+  function nettoyerNomFichier(nomFichier: string) {
+    const nomSansExtension =
+      nomFichier.lastIndexOf(".") > 0
+        ? nomFichier.substring(0, nomFichier.lastIndexOf("."))
+        : nomFichier;
+
+    return nomSansExtension
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-zA-Z0-9_-]/g, "_")
+      .replace(/_+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .toLowerCase();
   }
 
   async function ajouterPlan() {
-    if (!nom.trim() || !fichier) {
-      toast.warning("Champs manquants", "Renseigne le nom et choisis une image.");
+    if (!peutAjouterPlan) {
+      toast.error(
+        "Accès refusé",
+        "Votre rôle ne permet pas d’ajouter un plan."
+      );
+      return;
+    }
+
+    if (!nom.trim()) {
+      toast.warning("Nom manquant", "Renseigne le nom du plan.");
+      return;
+    }
+
+    if (!fichier) {
+      toast.warning("Image manquante", "Sélectionne une image du plan.");
+      return;
+    }
+
+    if (!fichier.type.startsWith("image/")) {
+      toast.warning(
+        "Fichier non valide",
+        "Le fichier sélectionné doit être une image."
+      );
       return;
     }
 
     setLoading(true);
 
-    const extension = fichier.name.split(".").pop()?.toLowerCase() || "jpg";
+    const extension =
+      fichier.name.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") ||
+      "jpg";
 
-    const safeName = fichier.name
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^a-zA-Z0-9.-]/g, "_")
-      .toLowerCase();
-
+    const safeName = nettoyerNomFichier(fichier.name) || "plan";
     const filePath = `${Date.now()}-${safeName}.${extension}`;
 
     const { error: uploadError } = await supabase.storage
       .from("plans")
-      .upload(filePath, fichier);
+      .upload(filePath, fichier, {
+        cacheControl: "3600",
+        upsert: false,
+        contentType: fichier.type,
+      });
 
     if (uploadError) {
       setLoading(false);
-      toast.error("Erreur upload", uploadError.message);
+      toast.error("Erreur d’envoi", uploadError.message);
       return;
     }
 
-    const { data: publicUrl } = supabase.storage
+    const { data: publicUrlData } = supabase.storage
       .from("plans")
       .getPublicUrl(filePath);
 
-    const { error } = await supabase.from("plans").insert({
+    const dimensions = await lireDimensionsImage(fichier);
+
+    const { error: insertError } = await supabase.from("plans").insert({
       nom: nom.trim(),
-      image_url: publicUrl.publicUrl,
+      image_url: publicUrlData.publicUrl,
       image_path: filePath,
+      largeur: dimensions?.largeur ?? null,
+      hauteur: dimensions?.hauteur ?? null,
     });
 
-    setLoading(false);
+    if (insertError) {
+      await supabase.storage.from("plans").remove([filePath]);
 
-    if (error) {
-      toast.error("Erreur création plan", error.message);
+      setLoading(false);
+      toast.error("Erreur de création", insertError.message);
       return;
     }
 
     setNom("");
     setFichier(null);
-    toast.success("Plan ajouté");
-    chargerPlans();
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+
+    setLoading(false);
+    toast.success("Plan ajouté", `${nom.trim()} est maintenant disponible.`);
+
+    await chargerPlans();
   }
 
   async function supprimerPlan(plan: Plan) {
-    const ok = await dialog.delete({
-      title: "Supprimer ce plan ?",
-      itemName: plan.nom,
-      description:
-        "Cette action supprimera le plan. Les équipements liés ne seront pas supprimés.",
-    });
-
-    if (!ok) return;
-
-    if (plan.image_path) {
-      await supabase.storage.from("plans").remove([plan.image_path]);
-    }
-
-    const { error } = await supabase.from("plans").delete().eq("id", plan.id);
-
-    if (error) {
-      toast.error("Erreur suppression", error.message);
+    if (!peutSupprimerPlan) {
+      toast.error(
+        "Accès refusé",
+        "Seul un administrateur peut supprimer un plan."
+      );
       return;
     }
 
-    toast.success("Plan supprimé");
-    chargerPlans();
+    const nombreEquipements = equipementsDuPlan(plan.id).length;
+
+    const confirmation = await dialog.delete({
+      title: "Supprimer ce plan ?",
+      itemName: plan.nom,
+      description:
+        nombreEquipements > 0
+          ? `${nombreEquipements} équipement(s) sont associés à ce plan. Ils ne seront pas supprimés, mais leur localisation devra être réattribuée.`
+          : "L’image du plan et son enregistrement seront définitivement supprimés.",
+    });
+
+    if (!confirmation) return;
+
+    setDeletingId(plan.id);
+
+    const { error: updateError } = await supabase
+      .from("equipements")
+      .update({
+        plan_id: null,
+        position_x: null,
+        position_y: null,
+      })
+      .eq("plan_id", plan.id);
+
+    if (updateError) {
+      setDeletingId(null);
+      toast.error(
+        "Impossible de détacher les équipements",
+        updateError.message
+      );
+      return;
+    }
+
+    const { error: deleteError } = await supabase
+      .from("plans")
+      .delete()
+      .eq("id", plan.id);
+
+    if (deleteError) {
+      setDeletingId(null);
+      toast.error("Erreur de suppression", deleteError.message);
+      return;
+    }
+
+    if (plan.image_path) {
+      const { error: storageError } = await supabase.storage
+        .from("plans")
+        .remove([plan.image_path]);
+
+      if (storageError) {
+        toast.warning(
+          "Plan supprimé de la base",
+          "L’image n’a toutefois pas pu être supprimée du stockage."
+        );
+      }
+    }
+
+    setDeletingId(null);
+    toast.success("Plan supprimé", plan.nom);
+
+    await chargerPlans();
   }
 
   return (
     <AppShell>
       <AppPage
         title="Plans"
-        subtitle="Gestion des plans du magasin et cartographie interactive."
+        subtitle="Gestion des plans du magasin et cartographie interactive des équipements."
       >
-        <AppCard title="Ajouter un plan">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_1fr_auto] md:items-end">
-            <AppInput
-              label="Nom du plan"
-              placeholder="RDC, Réserve, Cour matériaux..."
-              value={nom}
-              onChange={(e) => setNom(e.target.value)}
-            />
-
-            <div className="space-y-2">
-              <label className="block text-sm font-semibold text-gray-700 dark:text-slate-300">
-                Image du plan
-              </label>
-
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(e) => setFichier(e.target.files?.[0] || null)}
-                className="block w-full rounded-xl border border-gray-300 px-4 py-3 text-sm text-gray-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+        <AccessControl role={role} roles={["ADMIN", "DM"]}>
+          <AppCard title="Ajouter un plan">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_1fr_auto] md:items-end">
+              <AppInput
+                label="Nom du plan"
+                placeholder="RDC, Réserve, Cour matériaux..."
+                value={nom}
+                onChange={(event) => setNom(event.target.value)}
               />
+
+              <div className="space-y-2">
+                <label
+                  htmlFor="plan-file"
+                  className="block text-sm font-semibold text-gray-700 dark:text-slate-300"
+                >
+                  Image du plan
+                </label>
+
+                <input
+                  ref={fileInputRef}
+                  id="plan-file"
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  onChange={(event) =>
+                    setFichier(event.target.files?.[0] || null)
+                  }
+                  className="block w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-gray-700 file:mr-4 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:font-semibold file:text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:file:bg-slate-800 dark:file:text-slate-200"
+                />
+              </div>
+
+              <AppButton loading={loading} onClick={ajouterPlan}>
+                <Upload size={16} />
+                Ajouter
+              </AppButton>
             </div>
 
-            <AppButton loading={loading} onClick={ajouterPlan}>
-              Ajouter
-            </AppButton>
-          </div>
-        </AppCard>
+            {fichier && (
+              <p className="mt-3 text-sm text-gray-500 dark:text-slate-400">
+                Fichier sélectionné : {fichier.name}
+              </p>
+            )}
+          </AppCard>
+        </AccessControl>
 
         <AppCard title="Plans enregistrés">
-          {plans.length === 0 ? (
+          {loadingPlans ? (
+            <div className="py-10 text-center text-gray-500 dark:text-slate-400">
+              Chargement des plans...
+            </div>
+          ) : plans.length === 0 ? (
             <AppEmptyState
               icon={<Map size={42} />}
               title="Aucun plan"
-              description="Ajoute un premier plan pour préparer la localisation des équipements."
+              description="Ajoute un premier plan pour commencer à positionner les équipements."
             />
           ) : (
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-              {plans.map((plan) => (
-                <div
-                  key={plan.id}
-                  className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-slate-800 dark:bg-slate-950"
-                >
-                  <Link href={`/plans/${plan.id}`}>
-                    <img
-                      src={plan.image_url}
-                      alt={plan.nom}
-                      className="h-52 w-full object-cover transition hover:scale-105"
-                    />
-                  </Link>
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 2xl:grid-cols-3">
+              {plans.map((plan) => {
+                const total = equipementsDuPlan(plan.id).length;
+                const enService = compterEtat(plan.id, "En service");
+                const maintenance = compterEtat(plan.id, "En maintenance");
+                const horsService = compterEtat(plan.id, "Hors service");
 
-                  <div className="space-y-4 p-4">
-                    <div>
-                      <p className="font-bold text-gray-900 dark:text-white">
-                        {plan.nom}
-                      </p>
+                return (
+                  <article
+                    key={plan.id}
+                    className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg dark:border-slate-800 dark:bg-slate-950"
+                  >
+                    <Link
+                      href={`/plans/${encodeURIComponent(plan.id)}`}
+                      className="group block overflow-hidden"
+                    >
+                      <div className="relative">
+                        <img
+                          src={plan.image_url}
+                          alt={`Plan ${plan.nom}`}
+                          className="h-56 w-full object-cover transition duration-300 group-hover:scale-105"
+                        />
 
-                      <p className="text-xs text-gray-500 dark:text-slate-400">
-                        Ajouté le{" "}
-                        {new Date(plan.created_at).toLocaleDateString("fr-FR")}
-                      </p>
-                    </div>
+                        <div className="absolute right-3 top-3 rounded-full bg-black/70 px-3 py-1 text-xs font-semibold text-white backdrop-blur">
+                          {total} équipement{total > 1 ? "s" : ""}
+                        </div>
+                      </div>
+                    </Link>
 
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="rounded-xl bg-slate-100 p-3 dark:bg-slate-900">
-                        <p className="text-xs text-slate-500 dark:text-slate-400">
-                          Équipements
-                        </p>
-                        <p className="text-xl font-bold text-gray-900 dark:text-white">
-                          {equipementsDuPlan(plan.id).length}
+                    <div className="space-y-4 p-4">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <MapPinned
+                            size={18}
+                            className="text-sky-600 dark:text-sky-400"
+                          />
+
+                          <h2 className="font-bold text-gray-900 dark:text-white">
+                            {plan.nom}
+                          </h2>
+                        </div>
+
+                        <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">
+                          Ajouté le{" "}
+                          {new Date(plan.created_at).toLocaleDateString("fr-FR")}
+                          {plan.largeur && plan.hauteur
+                            ? ` • ${plan.largeur} × ${plan.hauteur}px`
+                            : ""}
                         </p>
                       </div>
 
-                      <div className="rounded-xl bg-emerald-100 p-3 dark:bg-emerald-950/40">
-                        <p className="text-xs text-emerald-700 dark:text-emerald-300">
-                          En service
-                        </p>
-                        <p className="text-xl font-bold text-emerald-700 dark:text-emerald-300">
-                          {compterEtat(plan.id, "En service")}
-                        </p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Statistique
+                          label="Équipements"
+                          valeur={total}
+                          className="bg-slate-100 text-slate-800 dark:bg-slate-900 dark:text-slate-200"
+                        />
+
+                        <Statistique
+                          label="En service"
+                          valeur={enService}
+                          className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
+                        />
+
+                        <Statistique
+                          label="Maintenance"
+                          valeur={maintenance}
+                          className="bg-orange-100 text-orange-800 dark:bg-orange-950/40 dark:text-orange-300"
+                        />
+
+                        <Statistique
+                          label="Hors service"
+                          valeur={horsService}
+                          className="bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300"
+                        />
                       </div>
 
-                      <div className="rounded-xl bg-orange-100 p-3 dark:bg-orange-950/40">
-                        <p className="text-xs text-orange-700 dark:text-orange-300">
-                          Maintenance
-                        </p>
-                        <p className="text-xl font-bold text-orange-700 dark:text-orange-300">
-                          {compterEtat(plan.id, "En maintenance")}
-                        </p>
-                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Link href={`/plans/${encodeURIComponent(plan.id)}`}>
+                          <AppButton
+                            variant="secondary"
+                            className="px-3 py-2 text-xs"
+                          >
+                            <MapPinned size={14} />
+                            Cartographie
+                          </AppButton>
+                        </Link>
 
-                      <div className="rounded-xl bg-red-100 p-3 dark:bg-red-950/40">
-                        <p className="text-xs text-red-700 dark:text-red-300">
-                          Hors service
-                        </p>
-                        <p className="text-xl font-bold text-red-700 dark:text-red-300">
-                          {compterEtat(plan.id, "Hors service")}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                      <Link href={`/plans/${plan.id}`}>
-                        <AppButton
-                          variant="secondary"
-                          className="px-3 py-2 text-xs"
+                        <a
+                          href={plan.image_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
                         >
-                          <ExternalLink size={14} />
-                          Cartographie
-                        </AppButton>
-                      </Link>
+                          <AppButton
+                            variant="secondary"
+                            className="px-3 py-2 text-xs"
+                          >
+                            <ImageIcon size={14} />
+                            Voir l’image
+                          </AppButton>
+                        </a>
 
-                      <a href={plan.image_url} target="_blank" rel="noreferrer">
-                        <AppButton
-                          variant="secondary"
-                          className="px-3 py-2 text-xs"
-                        >
-                          <ImageIcon size={14} />
-                          Voir l'image
-                        </AppButton>
-                      </a>
-
-                      <AppButton
-                        variant="danger"
-                        className="px-3 py-2 text-xs"
-                        onClick={() => supprimerPlan(plan)}
-                      >
-                        <Trash2 size={14} />
-                        Supprimer
-                      </AppButton>
+                        <AccessControl role={role} roles={["ADMIN"]}>
+                          <AppButton
+                            variant="danger"
+                            className="px-3 py-2 text-xs"
+                            loading={deletingId === plan.id}
+                            onClick={() => supprimerPlan(plan)}
+                          >
+                            <Trash2 size={14} />
+                            Supprimer
+                          </AppButton>
+                        </AccessControl>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              ))}
+                  </article>
+                );
+              })}
             </div>
           )}
         </AppCard>
       </AppPage>
     </AppShell>
   );
+}
+
+function Statistique({
+  label,
+  valeur,
+  className,
+}: {
+  label: string;
+  valeur: number;
+  className: string;
+}) {
+  return (
+    <div className={`rounded-xl p-3 ${className}`}>
+      <p className="text-xs opacity-80">{label}</p>
+      <p className="mt-1 text-xl font-bold">{valeur}</p>
+    </div>
+  );
+}
+
+function lireDimensionsImage(
+  fichier: File
+): Promise<{ largeur: number; hauteur: number } | null> {
+  return new Promise((resolve) => {
+    const image = new Image();
+    const objectUrl = URL.createObjectURL(fichier);
+
+    image.onload = () => {
+      const dimensions = {
+        largeur: image.naturalWidth,
+        hauteur: image.naturalHeight,
+      };
+
+      URL.revokeObjectURL(objectUrl);
+      resolve(dimensions);
+    };
+
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(null);
+    };
+
+    image.src = objectUrl;
+  });
 }

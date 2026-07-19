@@ -1,10 +1,8 @@
 "use client";
 
-import { useDialog } from "@/providers/DialogProvider";
-import { ajouterJournal } from "@/services/journal";
 import { useEffect, useState } from "react";
+
 import AppShell from "@/components/AppShell";
-import { supabase } from "@/lib/supabase";
 import {
   AppBadge,
   AppButton,
@@ -15,6 +13,10 @@ import {
   AppSelect,
   AppTable,
 } from "@/components/ui";
+import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/providers/AuthProvider";
+import { useDialog } from "@/providers/DialogProvider";
+import { ajouterJournal } from "@/services/journal";
 
 type TypeEquipement = {
   id: string;
@@ -44,6 +46,11 @@ type Equipement = {
 };
 
 export default function EquipementsListePage() {
+  const { role } = useAuth();
+  const dialog = useDialog();
+
+  const canEdit = role === "ADMIN" || role === "DM";
+
   const [equipements, setEquipements] = useState<Equipement[]>([]);
   const [types, setTypes] = useState<TypeEquipement[]>([]);
   const [secteurs, setSecteurs] = useState<Secteur[]>([]);
@@ -53,28 +60,62 @@ export default function EquipementsListePage() {
   const [filtreType, setFiltreType] = useState("Tous");
   const [filtreSecteur, setFiltreSecteur] = useState("Tous");
   const [filtreEtat, setFiltreEtat] = useState("Tous");
-  const dialog = useDialog();
 
   async function chargerDonnees() {
-    const { data: equipementsData } = await supabase
-      .from("equipements")
-      .select("*")
-      .order("numero", { ascending: true });
+    const [
+      { data: equipementsData, error: equipementsError },
+      { data: typesData, error: typesError },
+      { data: secteursData, error: secteursError },
+      { data: prestatairesData, error: prestatairesError },
+    ] = await Promise.all([
+      supabase
+        .from("equipements")
+        .select("*")
+        .order("numero", { ascending: true }),
 
-    const { data: typesData } = await supabase
-      .from("types_equipements")
-      .select("id, nom")
-      .order("nom");
+      supabase
+        .from("types_equipements")
+        .select("id, nom")
+        .order("nom"),
 
-    const { data: secteursData } = await supabase
-      .from("secteurs")
-      .select("id, nom")
-      .order("nom");
+      supabase
+        .from("secteurs")
+        .select("id, nom")
+        .order("nom"),
 
-    const { data: prestatairesData } = await supabase
-      .from("prestataires")
-      .select("id, nom")
-      .order("nom");
+      supabase
+        .from("prestataires")
+        .select("id, nom")
+        .order("nom"),
+    ]);
+
+    if (equipementsError) {
+      console.error(
+        "Erreur lors du chargement des équipements :",
+        equipementsError
+      );
+    }
+
+    if (typesError) {
+      console.error(
+        "Erreur lors du chargement des types d’équipements :",
+        typesError
+      );
+    }
+
+    if (secteursError) {
+      console.error(
+        "Erreur lors du chargement des secteurs :",
+        secteursError
+      );
+    }
+
+    if (prestatairesError) {
+      console.error(
+        "Erreur lors du chargement des prestataires :",
+        prestatairesError
+      );
+    }
 
     setEquipements(equipementsData || []);
     setTypes(typesData || []);
@@ -83,30 +124,44 @@ export default function EquipementsListePage() {
   }
 
   useEffect(() => {
-    chargerDonnees();
+    void chargerDonnees();
   }, []);
 
   function nomType(id: string | null) {
-    return types.find((t) => t.id === id)?.nom || "Non défini";
+    return types.find((type) => type.id === id)?.nom || "Non défini";
   }
 
   function nomSecteur(id: string | null) {
-    return secteurs.find((s) => s.id === id)?.nom || "Non défini";
+    return secteurs.find((secteur) => secteur.id === id)?.nom || "Non défini";
   }
 
   function nomPrestataire(id: string | null) {
-    return prestataires.find((p) => p.id === id)?.nom || "—";
+    return (
+      prestataires.find((prestataire) => prestataire.id === id)?.nom || "—"
+    );
   }
 
-  const equipementsFiltres = equipements.filter((e) => {
-    const texte = `${e.numero} ${e.nom} ${e.emplacement || ""} ${e.etat} ${nomType(
-      e.type_id
-    )} ${nomSecteur(e.secteur_id)} ${nomPrestataire(e.prestataire_id)}`.toLowerCase();
+  const equipementsFiltres = equipements.filter((equipement) => {
+    const texte = [
+      equipement.numero,
+      equipement.nom,
+      equipement.emplacement || "",
+      equipement.etat,
+      nomType(equipement.type_id),
+      nomSecteur(equipement.secteur_id),
+      nomPrestataire(equipement.prestataire_id),
+    ]
+      .join(" ")
+      .toLowerCase();
 
     const okRecherche = texte.includes(recherche.toLowerCase());
-    const okType = filtreType === "Tous" || e.type_id === filtreType;
-    const okSecteur = filtreSecteur === "Tous" || e.secteur_id === filtreSecteur;
-    const okEtat = filtreEtat === "Tous" || e.etat === filtreEtat;
+    const okType =
+      filtreType === "Tous" || equipement.type_id === filtreType;
+    const okSecteur =
+      filtreSecteur === "Tous" ||
+      equipement.secteur_id === filtreSecteur;
+    const okEtat =
+      filtreEtat === "Tous" || equipement.etat === filtreEtat;
 
     return okRecherche && okType && okSecteur && okEtat;
   });
@@ -115,76 +170,101 @@ export default function EquipementsListePage() {
     if (etat === "En service") return "success";
     if (etat === "Hors service") return "danger";
     if (etat === "En maintenance") return "warning";
+
     return "gray";
   }
-async function supprimerEquipement(id: string, numero: string, nom: string) {
-  const ok = await dialog.delete({
-    title: "Supprimer l’équipement ?",
-    itemName: `${numero} - ${nom}`,
-    description:
-      "Cette action est définitive. L’équipement sera supprimé de la base.",
-  });
 
-  if (!ok) return;
+  async function supprimerEquipement(
+    id: string,
+    numero: string,
+    nom: string
+  ) {
+    if (!canEdit) {
+      return;
+    }
 
-  const { error } = await supabase
-    .from("equipements")
-    .delete()
-    .eq("id", id);
+    const ok = await dialog.delete({
+      title: "Supprimer l’équipement ?",
+      itemName: `${numero} - ${nom}`,
+      description:
+        "Cette action est définitive. L’équipement sera supprimé de la base.",
+    });
 
-  if (error) {
-    alert(error.message);
-    return;
+    if (!ok) {
+      return;
+    }
+
+    const { error } = await supabase
+      .from("equipements")
+      .delete()
+      .eq("id", id);
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    await ajouterJournal(
+      "Suppression",
+      "Équipements",
+      `Équipement supprimé : ${numero} - ${nom}`
+    );
+
+    await chargerDonnees();
   }
 
-  await ajouterJournal(
-    "Suppression",
-    "Équipements",
-    `Équipement supprimé : ${numero} - ${nom}`
-  );
-
-  chargerDonnees();
-}
   return (
     <AppShell>
       <AppPage
         title="Liste des équipements"
         subtitle="Recherche, filtres et suivi du patrimoine technique."
         actions={
-          <AppButton onClick={() => (window.location.href = "/equipements/nouveau")}>
-            Nouvel équipement
-          </AppButton>
+          canEdit ? (
+            <AppButton
+              onClick={() => {
+                window.location.href = "/equipements/nouveau";
+              }}
+            >
+              Nouvel équipement
+            </AppButton>
+          ) : undefined
         }
       >
         <AppCard>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
             <AppInput
               placeholder="Rechercher un équipement..."
               value={recherche}
-              onChange={(e) => setRecherche(e.target.value)}
+              onChange={(event) => setRecherche(event.target.value)}
             />
 
             <AppSelect
               value={filtreType}
-              onChange={(e) => setFiltreType(e.target.value)}
+              onChange={(event) => setFiltreType(event.target.value)}
               options={[
                 { value: "Tous", label: "Tous les types" },
-                ...types.map((t) => ({ value: t.id, label: t.nom })),
+                ...types.map((type) => ({
+                  value: type.id,
+                  label: type.nom,
+                })),
               ]}
             />
 
             <AppSelect
               value={filtreSecteur}
-              onChange={(e) => setFiltreSecteur(e.target.value)}
+              onChange={(event) => setFiltreSecteur(event.target.value)}
               options={[
                 { value: "Tous", label: "Tous les secteurs" },
-                ...secteurs.map((s) => ({ value: s.id, label: s.nom })),
+                ...secteurs.map((secteur) => ({
+                  value: secteur.id,
+                  label: secteur.nom,
+                })),
               ]}
             />
 
             <AppSelect
               value={filtreEtat}
-              onChange={(e) => setFiltreEtat(e.target.value)}
+              onChange={(event) => setFiltreEtat(event.target.value)}
               options={[
                 { value: "Tous", label: "Tous les états" },
                 { value: "En service", label: "En service" },
@@ -203,9 +283,15 @@ async function supprimerEquipement(id: string, numero: string, nom: string) {
             title="Aucun équipement trouvé"
             description="Aucun équipement ne correspond à votre recherche."
             action={
-              <AppButton onClick={() => (window.location.href = "/equipements/nouveau")}>
-                Ajouter un équipement
-              </AppButton>
+              canEdit ? (
+                <AppButton
+                  onClick={() => {
+                    window.location.href = "/equipements/nouveau";
+                  }}
+                >
+                  Ajouter un équipement
+                </AppButton>
+              ) : undefined
             }
           />
         ) : (
@@ -222,62 +308,74 @@ async function supprimerEquipement(id: string, numero: string, nom: string) {
               "Actions",
             ]}
           >
-            {equipementsFiltres.map((e) => (
-              <tr key={e.id}>
+            {equipementsFiltres.map((equipement) => (
+              <tr key={equipement.id}>
                 <td className="px-6 py-4 font-bold text-gray-900 dark:text-white">
-                  {e.numero}
+                  {equipement.numero}
                 </td>
 
                 <td className="px-6 py-4 text-gray-700 dark:text-slate-300">
-                  {e.nom}
+                  {equipement.nom}
                 </td>
 
                 <td className="px-6 py-4 text-gray-700 dark:text-slate-300">
-                  {nomType(e.type_id)}
+                  {nomType(equipement.type_id)}
                 </td>
 
                 <td className="px-6 py-4 text-gray-700 dark:text-slate-300">
-                  {nomSecteur(e.secteur_id)}
+                  {nomSecteur(equipement.secteur_id)}
                 </td>
 
                 <td className="px-6 py-4 text-gray-700 dark:text-slate-300">
-                  {e.emplacement || "—"}
+                  {equipement.emplacement || "—"}
                 </td>
 
                 <td className="px-6 py-4 text-gray-700 dark:text-slate-300">
-                  {nomPrestataire(e.prestataire_id)}
+                  {nomPrestataire(equipement.prestataire_id)}
                 </td>
 
                 <td className="px-6 py-4">
-                  <AppBadge variant={badgeEtat(e.etat) as any}>
-                    {e.etat}
+                  <AppBadge variant={badgeEtat(equipement.etat) as any}>
+                    {equipement.etat}
                   </AppBadge>
                 </td>
 
                 <td className="px-6 py-4 text-gray-700 dark:text-slate-300">
-                  {e.prochaine_verification
-                    ? new Date(e.prochaine_verification).toLocaleDateString("fr-FR")
+                  {equipement.prochaine_verification
+                    ? new Date(
+                        equipement.prochaine_verification
+                      ).toLocaleDateString("fr-FR")
                     : "—"}
                 </td>
 
                 <td className="px-6 py-4">
-                 <div className="flex gap-2">
-  <AppButton
-    variant="secondary"
-    className="px-3 py-2 text-xs"
-    onClick={() => (window.location.href = `/equipements/${e.id}`)}
-  >
-    Voir
-  </AppButton>
+                  <div className="flex gap-2">
+                    <AppButton
+                      variant="secondary"
+                      className="px-3 py-2 text-xs"
+                      onClick={() => {
+                        window.location.href = `/equipements/${equipement.id}`;
+                      }}
+                    >
+                      Voir
+                    </AppButton>
 
-  <AppButton
-    variant="danger"
-    className="px-3 py-2 text-xs"
-    onClick={() => supprimerEquipement(e.id, e.numero, e.nom)}
-  >
-    Supprimer
-  </AppButton>
-</div>
+                    {canEdit && (
+                      <AppButton
+                        variant="danger"
+                        className="px-3 py-2 text-xs"
+                        onClick={() =>
+                          supprimerEquipement(
+                            equipement.id,
+                            equipement.numero,
+                            equipement.nom
+                          )
+                        }
+                      >
+                        Supprimer
+                      </AppButton>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}

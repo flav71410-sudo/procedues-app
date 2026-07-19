@@ -7,6 +7,7 @@ import { ajouterJournal } from "@/services/journal";
 import DocumentStats from "@/components/documents/DocumentStats";
 import DocumentForm from "@/components/documents/DocumentForm";
 import DocumentCard from "@/components/documents/DocumentCard";
+import { useAuth } from "@/providers/AuthProvider";
 
 type DocumentItem = {
   id: string;
@@ -27,6 +28,9 @@ type DocumentItem = {
 };
 
 export default function DocumentsPage() {
+  const { role } = useAuth();
+
+const canEdit = role === "ADMIN" || role === "DM";
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [recherche, setRecherche] = useState("");
   const [filtreCategorie, setFiltreCategorie] = useState("Toutes");
@@ -65,6 +69,10 @@ export default function DocumentsPage() {
   }
 
   async function ajouterDocument() {
+    if (!canEdit) {
+  alert("Vous n'êtes pas autorisé à ajouter un document.");
+  return;
+}
     if (!titre.trim() || !fichier) {
       alert("Merci de renseigner le titre et de sélectionner un fichier.");
       return;
@@ -120,6 +128,9 @@ export default function DocumentsPage() {
   }
 
   async function supprimerDocument(document: DocumentItem) {
+    if (!canEdit) {
+  return;
+}
     if (!confirm(`Supprimer "${document.titre}" ?`)) return;
 
     const chemin = document.fichier_url.split("/").pop();
@@ -148,6 +159,9 @@ export default function DocumentsPage() {
   }
 
   async function basculerFavori(document: DocumentItem) {
+    if (!canEdit) {
+  return;
+}
     const { error } = await supabase
       .from("documents")
       .update({ favori: !document.favori })
@@ -200,7 +214,7 @@ export default function DocumentsPage() {
         pdf={documents.filter((d) => d.extension === "pdf").length}
         categories={categories.length}
       />
-
+{canEdit &&(
       <DocumentForm
         titre={titre}
         description={description}
@@ -219,6 +233,7 @@ export default function DocumentsPage() {
         setFichier={setFichier}
         onSubmit={ajouterDocument}
       />
+      )}
 
       <div className="mt-8 bg-white rounded-2xl shadow p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
         <input
