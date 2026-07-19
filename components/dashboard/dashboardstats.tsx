@@ -1,5 +1,5 @@
 "use client";
-import StatCard from "@/components/ui/StatCard";
+import StatCard from "@/components/ui/stat-card";
 
 type Props = {
   totalConsignes: number;
