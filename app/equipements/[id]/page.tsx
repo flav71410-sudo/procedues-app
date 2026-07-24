@@ -17,6 +17,7 @@ import EquipmentDocuments from "@/components/equipements/EquipmentDocuments";
 import EquipmentHistory from "@/components/equipements/EquipmentHistory";
 import EquipmentVerifications from "@/components/equipements/EquipmentVerifications";
 import EquipmentLocation from "@/components/equipements/EquipmentLocation";
+import EquipmentQRCode from "@/components/equipements/EquipmentQRCode";
 import { useAuth } from "@/providers/AuthProvider";
 
 type Equipement = {
@@ -216,7 +217,7 @@ const canEdit = role === "ADMIN" || role === "DM";
 
         {activeTab === "infos" && (
           <>
-            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
               <AppCard title="Informations générales">
                 <div className="space-y-4">
                   <Info label="Numéro" value={equipement.numero} />
@@ -269,6 +270,15 @@ const canEdit = role === "ADMIN" || role === "DM";
                     value={formatDate(equipement.prochaine_verification)}
                   />
                 </div>
+              </AppCard>
+
+              <AppCard title="QR Code de l’équipement">
+                <EquipmentQRCode
+                  id={equipement.id}
+                  numero={equipement.numero}
+                  nom={equipement.nom}
+                  emplacement={equipement.emplacement}
+                />
               </AppCard>
             </div>
 
