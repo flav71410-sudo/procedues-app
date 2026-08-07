@@ -1,6 +1,9 @@
-import { createClient } from "@supabase/supabase-js";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+/*
+ * Pont de compatibilité.
+ * Les anciennes pages peuvent continuer à importer "@/lib/supabase",
+ * sans créer une seconde instance Supabase Auth.
+ */
+export {
+  supabase,
+  createClient,
+} from "@/lib/supabase/client";

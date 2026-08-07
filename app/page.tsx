@@ -1,13 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@/lib/supabase/client";
+
 
 export default function Home() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const supabase = createClient();
 
   async function handleLogin() {
     setError("");
@@ -25,7 +27,13 @@ export default function Home() {
       return;
     }
 
-    window.location.href = "/dashboard";
+    const params = new URLSearchParams(window.location.search);
+const redirectTo = params.get("redirectTo");
+
+window.location.href =
+  redirectTo && redirectTo.startsWith("/")
+    ? redirectTo
+    : "/dashboard";
   }
 
   return (

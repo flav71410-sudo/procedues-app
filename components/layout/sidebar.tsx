@@ -11,11 +11,10 @@ import { useEffect, useState } from "react";
 
 import {
   navigation,
-  NavigationItem,
+  type NavigationItem,
 } from "@/lib/navigation";
+import { roleLabel } from "@/lib/permissions";
 import { useAuth } from "@/providers/AuthProvider";
-
-type Item = NavigationItem;
 
 type SidebarProps = {
   mobileOpen?: boolean;
@@ -23,13 +22,13 @@ type SidebarProps = {
 };
 
 type SidebarLinkProps = {
-  item: Item;
+  item: NavigationItem;
   onNavigate?: () => void;
 };
 
 type SidebarSectionProps = {
   title: string;
-  items: Item[];
+  items: NavigationItem[];
   defaultOpen: boolean;
   onNavigate?: () => void;
 };
@@ -60,11 +59,7 @@ function SidebarLink({
           : "text-white hover:bg-white/15 active:bg-white/20",
       ].join(" ")}
     >
-      <Icon
-        size={19}
-        className="shrink-0"
-      />
-
+      <Icon size={19} className="shrink-0" />
       <span className="min-w-0 truncate">
         {item.label}
       </span>
@@ -106,15 +101,9 @@ function SidebarSection({
         <span>{title}</span>
 
         {open ? (
-          <ChevronDown
-            size={17}
-            className="shrink-0"
-          />
+          <ChevronDown size={17} className="shrink-0" />
         ) : (
-          <ChevronRight
-            size={17}
-            className="shrink-0"
-          />
+          <ChevronRight size={17} className="shrink-0" />
         )}
       </button>
 
@@ -148,9 +137,15 @@ function SidebarContent({
   onMobileClose?: () => void;
 }) {
   const pathname = usePathname();
-  const { role } = useAuth();
+  const {
+    can,
+    loading,
+    profil,
+    role,
+    magasin,
+  } = useAuth();
 
-  if (!role) {
+  if (loading) {
     return (
       <div className="flex h-full items-center justify-center p-6">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-white/30 border-t-white" />
@@ -159,25 +154,32 @@ function SidebarContent({
   }
 
   const accueil = navigation.accueil.filter((item) =>
-    item.roles.includes(role),
+    can(item.permission)
   );
 
   const exploitation = navigation.exploitation.filter((item) =>
-    item.roles.includes(role),
+    can(item.permission)
   );
 
   const administration =
     navigation.administration.filter((item) =>
-      item.roles.includes(role),
+      can(item.permission)
     );
 
   const exploitationOpen = exploitation.some(
     (item) =>
       pathname === item.href ||
-      pathname.startsWith(`${item.href}/`),
+      pathname.startsWith(`${item.href}/`)
   );
 
   const adminOpen = pathname.startsWith("/admin");
+
+  const nomComplet =
+    [profil?.prenom, profil?.nom]
+      .filter(Boolean)
+      .join(" ") ||
+    profil?.email ||
+    "Utilisateur";
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -194,7 +196,10 @@ function SidebarContent({
           </h1>
 
           <p className="mt-1 truncate text-sm text-blue-100">
-            Castorama Claye-Souilly
+            {magasin?.nom ??
+              (role === "SUPER_ADMIN"
+                ? "Tous les magasins"
+                : "Magasin non attribué")}
           </p>
         </div>
 
@@ -243,11 +248,11 @@ function SidebarContent({
       <div className="shrink-0 px-4 pb-4 pt-3 lg:px-6 lg:pb-6">
         <div className="rounded-2xl bg-white/10 p-4">
           <p className="truncate text-sm font-bold">
-            Flavien Ruhaut
+            {nomComplet}
           </p>
 
           <p className="mt-1 truncate text-xs text-blue-100">
-            {role}
+            {roleLabel(role)}
           </p>
 
           <p className="mt-2 flex items-center gap-2 text-xs text-green-200">
@@ -255,7 +260,6 @@ function SidebarContent({
               aria-hidden="true"
               className="h-2 w-2 rounded-full bg-green-300"
             />
-
             Connecté
           </p>
         </div>
@@ -270,12 +274,10 @@ export default function Sidebar({
 }: SidebarProps) {
   return (
     <>
-      {/* Sidebar ordinateur */}
       <aside className="sticky top-0 hidden h-screen w-72 shrink-0 bg-[#0078B8] text-white lg:block">
         <SidebarContent />
       </aside>
 
-      {/* Arrière-plan mobile */}
       <button
         type="button"
         aria-label="Fermer le menu"
@@ -289,7 +291,6 @@ export default function Sidebar({
         ].join(" ")}
       />
 
-      {/* Sidebar mobile et tablette */}
       <aside
         aria-hidden={!mobileOpen}
         className={[
@@ -301,9 +302,7 @@ export default function Sidebar({
             : "-translate-x-full",
         ].join(" ")}
       >
-        <SidebarContent
-          onMobileClose={onMobileClose}
-        />
+        <SidebarContent onMobileClose={onMobileClose} />
       </aside>
     </>
   );

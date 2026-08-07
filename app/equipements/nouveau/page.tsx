@@ -1,9 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
+
 import AppShell from "@/components/AppShell";
-import { supabase } from "@/lib/supabase";
-import { ajouterJournal } from "@/services/journal";
 import {
   AppButton,
   AppCard,
@@ -12,6 +15,9 @@ import {
   AppSelect,
   AppTextarea,
 } from "@/components/ui";
+import { supabase } from "@/lib/supabase/client";
+import { useAuth } from "@/providers/AuthProvider";
+import { ajouterJournal } from "@/services/journal";
 
 type TypeEquipement = {
   id: string;
@@ -28,93 +34,275 @@ type Prestataire = {
   nom: string;
 };
 
+function getErrorMessage(error: unknown): string {
+  if (
+    error &&
+    typeof error === "object" &&
+    "message" in error
+  ) {
+    return String(error.message);
+  }
+
+  return "Une erreur inconnue est survenue.";
+}
+
 export default function NouvelEquipementPage() {
-  const [types, setTypes] = useState<TypeEquipement[]>([]);
-  const [secteurs, setSecteurs] = useState<Secteur[]>([]);
-  const [prestataires, setPrestataires] = useState<Prestataire[]>([]);
+  const {
+    can,
+    magasinActif,
+    vueTousMagasins,
+    loading: chargementAuth,
+  } = useAuth();
+
+  const canCreate = can("equipements.edit");
+
+  const [types, setTypes] = useState<
+    TypeEquipement[]
+  >([]);
+  const [secteurs, setSecteurs] = useState<
+    Secteur[]
+  >([]);
+  const [prestataires, setPrestataires] =
+    useState<Prestataire[]>([]);
+
+  const [chargementReferentiels, setChargementReferentiels] =
+    useState(true);
   const [loading, setLoading] = useState(false);
 
   const [numero, setNumero] = useState("");
   const [nom, setNom] = useState("");
   const [typeId, setTypeId] = useState("");
   const [secteurId, setSecteurId] = useState("");
-  const [prestataireId, setPrestataireId] = useState("");
-  const [emplacement, setEmplacement] = useState("");
+  const [prestataireId, setPrestataireId] =
+    useState("");
+  const [emplacement, setEmplacement] =
+    useState("");
   const [fabricant, setFabricant] = useState("");
   const [modele, setModele] = useState("");
-  const [numeroSerie, setNumeroSerie] = useState("");
-  const [dateInstallation, setDateInstallation] = useState("");
-  const [dateMiseService, setDateMiseService] = useState("");
-  const [prochaineVerification, setProchaineVerification] = useState("");
+  const [numeroSerie, setNumeroSerie] =
+    useState("");
+  const [dateInstallation, setDateInstallation] =
+    useState("");
+  const [dateMiseService, setDateMiseService] =
+    useState("");
+  const [
+    prochaineVerification,
+    setProchaineVerification,
+  ] = useState("");
   const [etat, setEtat] = useState("En service");
-  const [observations, setObservations] = useState("");
+  const [observations, setObservations] =
+    useState("");
 
-  async function chargerReferentiels() {
-    const { data: typesData } = await supabase
-      .from("types_equipements")
-      .select("id, nom")
-      .order("nom");
+  const chargerReferentiels = useCallback(async () => {
+    if (chargementAuth) {
+      return;
+    }
 
-    const { data: secteursData } = await supabase
-      .from("secteurs")
-      .select("id, nom")
-      .order("nom");
+    if (vueTousMagasins || !magasinActif) {
+      setTypes([]);
+      setSecteurs([]);
+      setPrestataires([]);
+      setChargementReferentiels(false);
+      return;
+    }
 
-    const { data: prestatairesData } = await supabase
-      .from("prestataires")
-      .select("id, nom")
-      .order("nom");
+    try {
+      setChargementReferentiels(true);
 
-    setTypes(typesData || []);
-    setSecteurs(secteursData || []);
-    setPrestataires(prestatairesData || []);
-  }
+      const [
+        typesResult,
+        secteursResult,
+        prestatairesResult,
+      ] = await Promise.all([
+        supabase
+          .from("types_equipements")
+          .select("id, nom")
+          .order("nom", { ascending: true }),
+
+        supabase
+          .from("secteurs")
+          .select("id, nom")
+          .eq("magasin_id", magasinActif.id)
+          .order("nom", { ascending: true }),
+
+        supabase
+          .from("prestataires")
+          .select("id, nom")
+          .eq("magasin_id", magasinActif.id)
+          .order("nom", { ascending: true }),
+      ]);
+
+      if (typesResult.error) {
+        throw typesResult.error;
+      }
+
+      if (secteursResult.error) {
+        throw secteursResult.error;
+      }
+
+      if (prestatairesResult.error) {
+        throw prestatairesResult.error;
+      }
+
+      setTypes(
+        (typesResult.data ?? []) as TypeEquipement[]
+      );
+      setSecteurs(
+        (secteursResult.data ?? []) as Secteur[]
+      );
+      setPrestataires(
+        (prestatairesResult.data ??
+          []) as Prestataire[]
+      );
+    } catch (error) {
+      console.error(
+        "Erreur chargement référentiels :",
+        error
+      );
+
+      alert(
+        `Erreur chargement des référentiels : ${getErrorMessage(
+          error
+        )}`
+      );
+    } finally {
+      setChargementReferentiels(false);
+    }
+  }, [
+    chargementAuth,
+    magasinActif,
+    vueTousMagasins,
+  ]);
 
   useEffect(() => {
-    chargerReferentiels();
-  }, []);
+    setSecteurId("");
+    setPrestataireId("");
+
+    void chargerReferentiels();
+  }, [chargerReferentiels]);
 
   async function enregistrerEquipement() {
+    if (!canCreate) {
+      alert(
+        "Vous n’êtes pas autorisé à créer un équipement."
+      );
+      return;
+    }
+
+    if (chargementAuth) {
+      alert(
+        "Le profil utilisateur est encore en cours de chargement."
+      );
+      return;
+    }
+
+    if (vueTousMagasins || !magasinActif) {
+      alert(
+        "Sélectionnez un magasin précis avant de créer un équipement."
+      );
+      return;
+    }
+
     if (!numero.trim() || !nom.trim() || !typeId) {
-      alert("Merci de renseigner le numéro, le nom et le type.");
+      alert(
+        "Merci de renseigner le numéro, le nom et le type."
+      );
       return;
     }
 
-    setLoading(true);
+    try {
+      setLoading(true);
 
-    const { error } = await supabase.from("equipements").insert({
-      numero: numero.trim(),
-      nom: nom.trim(),
-      type_id: typeId || null,
-      secteur_id: secteurId || null,
-      prestataire_id: prestataireId || null,
-      emplacement: emplacement.trim() || null,
-      fabricant: fabricant.trim() || null,
-      modele: modele.trim() || null,
-      numero_serie: numeroSerie.trim() || null,
-      date_installation: dateInstallation || null,
-      date_mise_service: dateMiseService || null,
-      prochaine_verification: prochaineVerification || null,
-      etat,
-      observations: observations.trim() || null,
-    });
+      const { data, error } = await supabase
+        .from("equipements")
+        .insert({
+          magasin_id: magasinActif.id,
+          numero: numero.trim(),
+          nom: nom.trim(),
+          type_id: typeId,
+          secteur_id: secteurId || null,
+          prestataire_id: prestataireId || null,
+          emplacement: emplacement.trim() || null,
+          fabricant: fabricant.trim() || null,
+          modele: modele.trim() || null,
+          numero_serie:
+            numeroSerie.trim() || null,
+          date_installation:
+            dateInstallation || null,
+          date_mise_service:
+            dateMiseService || null,
+          prochaine_verification:
+            prochaineVerification || null,
+          etat,
+          observations:
+            observations.trim() || null,
+        })
+        .select(
+          "id, numero, nom, magasin_id"
+        )
+        .single();
 
-    setLoading(false);
+      if (error) {
+        throw error;
+      }
 
-    if (error) {
-      alert("Erreur création équipement : " + error.message);
-      return;
+      if (!data) {
+        throw new Error(
+          "Aucun équipement n’a été retourné après la création."
+        );
+      }
+
+      if (data.magasin_id !== magasinActif.id) {
+        throw new Error(
+          "Le magasin enregistré ne correspond pas au magasin actif."
+        );
+      }
+
+      await ajouterJournal(
+        "Création",
+        "Équipements",
+        `Équipement créé : ${data.numero} - ${data.nom} (${magasinActif.nom})`
+      );
+
+      alert(
+        `Équipement créé avec succès dans ${magasinActif.nom}.`
+      );
+
+      window.location.href = "/equipements";
+    } catch (error) {
+      console.error(
+        "Erreur création équipement :",
+        error
+      );
+
+      const message = getErrorMessage(error);
+
+      if (
+        message.includes(
+          "equipements_magasin_numero_key"
+        ) ||
+        message.includes("duplicate key value")
+      ) {
+        alert(
+          `Le numéro « ${numero.trim()} » existe déjà dans ${magasinActif.nom}.`
+        );
+      } else {
+        alert(
+          `Erreur création équipement : ${message}`
+        );
+      }
+    } finally {
+      setLoading(false);
     }
-
-    await ajouterJournal(
-      "Création",
-      "Équipements",
-      `Équipement créé : ${numero} - ${nom}`
-    );
-
-    alert("Équipement créé avec succès.");
-    window.location.href = "/equipements/liste";
   }
+
+  const creationDesactivee =
+    loading ||
+    chargementAuth ||
+    chargementReferentiels ||
+    vueTousMagasins ||
+    !magasinActif ||
+    !canCreate;
 
   return (
     <AppShell>
@@ -124,37 +312,70 @@ export default function NouvelEquipementPage() {
         actions={
           <AppButton
             variant="secondary"
-            onClick={() => (window.location.href = "/equipements/liste")}
+            onClick={() => {
+              window.location.href = "/equipements";
+            }}
           >
             Retour
           </AppButton>
         }
       >
+        <AppCard title="Magasin">
+          <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-blue-900 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200">
+            <p className="text-sm font-semibold">
+              Magasin de rattachement
+            </p>
+
+            <p className="mt-1 text-lg font-bold">
+              {vueTousMagasins
+                ? "Sélectionnez un magasin précis"
+                : magasinActif?.nom ??
+                  "Aucun magasin sélectionné"}
+            </p>
+
+            <p className="mt-1 text-sm">
+              L’équipement sera visible uniquement dans ce
+              magasin.
+            </p>
+          </div>
+        </AppCard>
+
         <AppCard title="Informations générales">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <AppInput
               label="N° équipement *"
               placeholder="EA-001, BAES-015..."
               value={numero}
-              onChange={(e) => setNumero(e.target.value)}
+              onChange={(event) =>
+                setNumero(event.target.value)
+              }
             />
 
             <AppInput
               label="Désignation *"
               placeholder="Extincteur eau 9L"
               value={nom}
-              onChange={(e) => setNom(e.target.value)}
+              onChange={(event) =>
+                setNom(event.target.value)
+              }
             />
 
             <AppSelect
               label="Type *"
               value={typeId}
-              onChange={(e) => setTypeId(e.target.value)}
+              onChange={(event) =>
+                setTypeId(event.target.value)
+              }
               options={[
-                { value: "", label: "Sélectionner..." },
-                ...types.map((t) => ({
-                  value: t.id,
-                  label: t.nom,
+                {
+                  value: "",
+                  label: chargementReferentiels
+                    ? "Chargement..."
+                    : "Sélectionner...",
+                },
+                ...types.map((type) => ({
+                  value: type.id,
+                  label: type.nom,
                 })),
               ]}
             />
@@ -162,12 +383,20 @@ export default function NouvelEquipementPage() {
             <AppSelect
               label="Secteur"
               value={secteurId}
-              onChange={(e) => setSecteurId(e.target.value)}
+              onChange={(event) =>
+                setSecteurId(event.target.value)
+              }
               options={[
-                { value: "", label: "Sélectionner..." },
-                ...secteurs.map((s) => ({
-                  value: s.id,
-                  label: s.nom,
+                {
+                  value: "",
+                  label:
+                    secteurs.length > 0
+                      ? "Sélectionner..."
+                      : "Aucun secteur disponible",
+                },
+                ...secteurs.map((secteur) => ({
+                  value: secteur.id,
+                  label: secteur.nom,
                 })),
               ]}
             />
@@ -176,79 +405,126 @@ export default function NouvelEquipementPage() {
               label="Emplacement"
               placeholder="Allée 12, local sprinkler..."
               value={emplacement}
-              onChange={(e) => setEmplacement(e.target.value)}
+              onChange={(event) =>
+                setEmplacement(event.target.value)
+              }
             />
 
             <AppSelect
               label="Prestataire"
               value={prestataireId}
-              onChange={(e) => setPrestataireId(e.target.value)}
+              onChange={(event) =>
+                setPrestataireId(event.target.value)
+              }
               options={[
-                { value: "", label: "Sélectionner..." },
-                ...prestataires.map((p) => ({
-                  value: p.id,
-                  label: p.nom,
-                })),
+                {
+                  value: "",
+                  label:
+                    prestataires.length > 0
+                      ? "Sélectionner..."
+                      : "Aucun prestataire disponible",
+                },
+                ...prestataires.map(
+                  (prestataire) => ({
+                    value: prestataire.id,
+                    label: prestataire.nom,
+                  })
+                ),
               ]}
             />
           </div>
         </AppCard>
 
         <AppCard title="Informations techniques">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <AppInput
               label="Fabricant"
               value={fabricant}
-              onChange={(e) => setFabricant(e.target.value)}
+              onChange={(event) =>
+                setFabricant(event.target.value)
+              }
             />
 
             <AppInput
               label="Modèle"
               value={modele}
-              onChange={(e) => setModele(e.target.value)}
+              onChange={(event) =>
+                setModele(event.target.value)
+              }
             />
 
             <AppInput
               label="N° de série"
               value={numeroSerie}
-              onChange={(e) => setNumeroSerie(e.target.value)}
+              onChange={(event) =>
+                setNumeroSerie(event.target.value)
+              }
             />
           </div>
         </AppCard>
 
         <AppCard title="Dates et suivi">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
             <AppInput
               label="Date installation"
               type="date"
               value={dateInstallation}
-              onChange={(e) => setDateInstallation(e.target.value)}
+              onChange={(event) =>
+                setDateInstallation(
+                  event.target.value
+                )
+              }
             />
 
             <AppInput
               label="Mise en service"
               type="date"
               value={dateMiseService}
-              onChange={(e) => setDateMiseService(e.target.value)}
+              onChange={(event) =>
+                setDateMiseService(
+                  event.target.value
+                )
+              }
             />
 
             <AppInput
               label="Prochaine vérification"
               type="date"
               value={prochaineVerification}
-              onChange={(e) => setProchaineVerification(e.target.value)}
+              onChange={(event) =>
+                setProchaineVerification(
+                  event.target.value
+                )
+              }
             />
 
             <AppSelect
               label="État"
               value={etat}
-              onChange={(e) => setEtat(e.target.value)}
+              onChange={(event) =>
+                setEtat(event.target.value)
+              }
               options={[
-                { value: "En service", label: "En service" },
-                { value: "Hors service", label: "Hors service" },
-                { value: "En maintenance", label: "En maintenance" },
-                { value: "À remplacer", label: "À remplacer" },
-                { value: "Déposé", label: "Déposé" },
+                {
+                  value: "En service",
+                  label: "En service",
+                },
+                {
+                  value: "Hors service",
+                  label: "Hors service",
+                },
+                {
+                  value: "En maintenance",
+                  label: "En maintenance",
+                },
+                {
+                  value: "À remplacer",
+                  label: "À remplacer",
+                },
+                {
+                  value: "Déposé",
+                  label: "Déposé",
+                },
               ]}
             />
           </div>
@@ -258,19 +534,25 @@ export default function NouvelEquipementPage() {
           <AppTextarea
             placeholder="Observations, remarques, détails techniques..."
             value={observations}
-            onChange={(e) => setObservations(e.target.value)}
+            onChange={(event) =>
+              setObservations(event.target.value)
+            }
           />
 
           <div className="mt-6 flex justify-end gap-3">
             <AppButton
               variant="secondary"
-              onClick={() => (window.location.href = "/equipements/liste")}
+              disabled={loading}
+              onClick={() => {
+                window.location.href = "/equipements";
+              }}
             >
               Annuler
             </AppButton>
 
             <AppButton
               loading={loading}
+              disabled={creationDesactivee}
               onClick={enregistrerEquipement}
             >
               Créer l’équipement

@@ -1,8 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import Link from "next/link";
 import {
+  AlertTriangle,
   ImageIcon,
   Map,
   MapPinned,
@@ -20,98 +27,157 @@ import {
   AppPage,
 } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/providers/AuthProvider";
 import { useDialog } from "@/providers/DialogProvider";
 import { useToast } from "@/providers/ToastProvider";
-import { useAuth } from "@/providers/AuthProvider";
+import {
+  createPlan,
+  getPlans,
+  getTousEquipements,
+} from "@/services/plansService";
+import type {
+  Plan,
+  PlanEquipement,
+  PlanScope,
+} from "@/types/plans";
 
-type Plan = {
-  id: string;
-  nom: string;
-  image_url: string;
-  image_path: string | null;
-  largeur: number | null;
-  hauteur: number | null;
-  created_at: string;
-};
-
-type EquipementPlan = {
-  id: string;
-  plan_id: string | null;
-  etat: string;
+type MagasinOption = {
+  readonly id: string;
+  readonly nom: string;
 };
 
 export default function PlansPage() {
   const dialog = useDialog();
   const toast = useToast();
-  const { role } = useAuth();
+
+  const {
+    role,
+    magasinActif,
+    vueTousMagasins,
+    magasinsDisponibles,
+    peutChangerMagasin,
+    changerMagasinActif,
+    loading: authLoading,
+  } = useAuth();
+
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const peutAjouterPlan = role === "ADMIN" || role === "DM";
-  const peutSupprimerPlan = role === "ADMIN";
+  const roleNormalise = String(role ?? "").toUpperCase();
+
+const peutAjouterPlan = [
+  "ADMIN",
+  "SUPER_ADMIN",
+  "DM",
+].includes(roleNormalise);
+
+const peutSupprimerPlan = [
+  "ADMIN",
+  "SUPER_ADMIN",
+].includes(roleNormalise);
 
   const [plans, setPlans] = useState<Plan[]>([]);
-  const [equipements, setEquipements] = useState<EquipementPlan[]>([]);
+  const [equipements, setEquipements] =
+    useState<PlanEquipement[]>([]);
+
   const [nom, setNom] = useState("");
-  const [fichier, setFichier] = useState<File | null>(null);
+  const [fichier, setFichier] =
+    useState<File | null>(null);
+
   const [loading, setLoading] = useState(false);
-  const [loadingPlans, setLoadingPlans] = useState(true);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [loadingPlans, setLoadingPlans] =
+    useState(true);
+  const [deletingId, setDeletingId] =
+    useState<string | null>(null);
+  const [erreur, setErreur] =
+    useState<string | null>(null);
 
-  async function chargerPlans() {
-    setLoadingPlans(true);
+  const scope = useMemo<PlanScope>(
+    () => ({
+      magasinId: magasinActif?.id ?? null,
+      tousMagasins: vueTousMagasins,
+    }),
+    [magasinActif?.id, vueTousMagasins]
+  );
 
-    const [
-      { data: plansData, error: plansError },
-      { data: equipementsData, error: equipementsError },
-    ] = await Promise.all([
-      supabase
-        .from("plans")
-        .select(
-          "id, nom, image_url, image_path, largeur, hauteur, created_at"
-        )
-        .order("created_at", { ascending: false }),
+  const chargerPlans = useCallback(async () => {
+    if (authLoading) return;
 
-      supabase
-        .from("equipements")
-        .select("id, plan_id, etat"),
-    ]);
-
-    if (plansError) {
-      toast.error("Erreur de chargement", plansError.message);
+    if (!vueTousMagasins && !magasinActif) {
+      setPlans([]);
+      setEquipements([]);
       setLoadingPlans(false);
+      setErreur(
+        "Aucun magasin actif. Sélectionne un magasin."
+      );
       return;
     }
 
-    if (equipementsError) {
-      toast.error(
-        "Erreur de chargement des équipements",
-        equipementsError.message
-      );
-    }
+    try {
+      setLoadingPlans(true);
+      setErreur(null);
 
-    setPlans(plansData || []);
-    setEquipements(equipementsData || []);
-    setLoadingPlans(false);
-  }
+      const [plansData, equipementsData] =
+        await Promise.all([
+          getPlans(scope),
+          getTousEquipements(scope),
+        ]);
+
+      setPlans(plansData);
+      setEquipements(equipementsData);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Une erreur inconnue est survenue.";
+
+      setErreur(message);
+      toast.error(
+        "Erreur de chargement",
+        message
+      );
+      setPlans([]);
+      setEquipements([]);
+    } finally {
+      setLoadingPlans(false);
+    }
+  }, [
+    authLoading,
+    magasinActif,
+    scope,
+    toast,
+    vueTousMagasins,
+  ]);
 
   useEffect(() => {
-    chargerPlans();
-  }, []);
+    void chargerPlans();
+  }, [chargerPlans]);
 
   function equipementsDuPlan(planId: string) {
-    return equipements.filter((equipement) => equipement.plan_id === planId);
+    return equipements.filter(
+      (equipement) =>
+        equipement.plan_id === planId
+    );
   }
 
-  function compterEtat(planId: string, etat: string) {
+  function compterEtat(
+    planId: string,
+    etat: string
+  ) {
     return equipementsDuPlan(planId).filter(
-      (equipement) => equipement.etat === etat
+      (equipement) =>
+        equipement.etat === etat
     ).length;
   }
 
-  function nettoyerNomFichier(nomFichier: string) {
+  function nettoyerNomFichier(
+    nomFichier: string
+  ) {
     const nomSansExtension =
       nomFichier.lastIndexOf(".") > 0
-        ? nomFichier.substring(0, nomFichier.lastIndexOf("."))
+        ? nomFichier.substring(
+            0,
+            nomFichier.lastIndexOf(".")
+          )
         : nomFichier;
 
     return nomSansExtension
@@ -132,13 +198,30 @@ export default function PlansPage() {
       return;
     }
 
+    if (
+      vueTousMagasins ||
+      !magasinActif
+    ) {
+      toast.warning(
+        "Magasin requis",
+        "Sélectionne un magasin précis avant d’ajouter un plan."
+      );
+      return;
+    }
+
     if (!nom.trim()) {
-      toast.warning("Nom manquant", "Renseigne le nom du plan.");
+      toast.warning(
+        "Nom manquant",
+        "Renseigne le nom du plan."
+      );
       return;
     }
 
     if (!fichier) {
-      toast.warning("Image manquante", "Sélectionne une image du plan.");
+      toast.warning(
+        "Image manquante",
+        "Sélectionne une image du plan."
+      );
       return;
     }
 
@@ -150,62 +233,98 @@ export default function PlansPage() {
       return;
     }
 
-    setLoading(true);
+    try {
+      setLoading(true);
+      setErreur(null);
 
-    const extension =
-      fichier.name.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") ||
-      "jpg";
+      const extension =
+        fichier.name
+          .split(".")
+          .pop()
+          ?.toLowerCase()
+          .replace(/[^a-z0-9]/g, "") ||
+        "jpg";
 
-    const safeName = nettoyerNomFichier(fichier.name) || "plan";
-    const filePath = `${Date.now()}-${safeName}.${extension}`;
+      const safeName =
+        nettoyerNomFichier(fichier.name) ||
+        "plan";
 
-    const { error: uploadError } = await supabase.storage
-      .from("plans")
-      .upload(filePath, fichier, {
-        cacheControl: "3600",
-        upsert: false,
-        contentType: fichier.type,
-      });
+      const filePath = [
+        magasinActif.id,
+        String(new Date().getFullYear()),
+        `${Date.now()}-${safeName}.${extension}`,
+      ].join("/");
 
-    if (uploadError) {
+      const { error: uploadError } =
+        await supabase.storage
+          .from("plans")
+          .upload(filePath, fichier, {
+            cacheControl: "3600",
+            upsert: false,
+            contentType: fichier.type,
+          });
+
+      if (uploadError) {
+        throw uploadError;
+      }
+
+      const { data: publicUrlData } =
+        supabase.storage
+          .from("plans")
+          .getPublicUrl(filePath);
+
+      const dimensions =
+        await lireDimensionsImage(fichier);
+
+      try {
+        await createPlan({
+          nom: nom.trim(),
+          image_url:
+            publicUrlData.publicUrl,
+          image_path: filePath,
+          largeur:
+            dimensions?.largeur ?? null,
+          hauteur:
+            dimensions?.hauteur ?? null,
+          magasin_id: magasinActif.id,
+        });
+      } catch (insertError) {
+        await supabase.storage
+          .from("plans")
+          .remove([filePath]);
+
+        throw insertError;
+      }
+
+      const nomPlan = nom.trim();
+
+      setNom("");
+      setFichier(null);
+
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+
+      toast.success(
+        "Plan ajouté",
+        `${nomPlan} est maintenant disponible.`
+      );
+
+      await chargerPlans();
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Une erreur inconnue est survenue.";
+
+      setErreur(message);
+      toast.error(
+        "Erreur de création",
+        message
+      );
+    } finally {
       setLoading(false);
-      toast.error("Erreur d’envoi", uploadError.message);
-      return;
     }
-
-    const { data: publicUrlData } = supabase.storage
-      .from("plans")
-      .getPublicUrl(filePath);
-
-    const dimensions = await lireDimensionsImage(fichier);
-
-    const { error: insertError } = await supabase.from("plans").insert({
-      nom: nom.trim(),
-      image_url: publicUrlData.publicUrl,
-      image_path: filePath,
-      largeur: dimensions?.largeur ?? null,
-      hauteur: dimensions?.hauteur ?? null,
-    });
-
-    if (insertError) {
-      await supabase.storage.from("plans").remove([filePath]);
-
-      setLoading(false);
-      toast.error("Erreur de création", insertError.message);
-      return;
-    }
-
-    setNom("");
-    setFichier(null);
-
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-
-    setLoading(false);
-    toast.success("Plan ajouté", `${nom.trim()} est maintenant disponible.`);
-
-    await chargerPlans();
   }
 
   async function supprimerPlan(plan: Plan) {
@@ -217,67 +336,118 @@ export default function PlansPage() {
       return;
     }
 
-    const nombreEquipements = equipementsDuPlan(plan.id).length;
+    const nombreEquipements =
+      equipementsDuPlan(plan.id).length;
 
-    const confirmation = await dialog.delete({
-      title: "Supprimer ce plan ?",
-      itemName: plan.nom,
-      description:
-        nombreEquipements > 0
-          ? `${nombreEquipements} équipement(s) sont associés à ce plan. Ils ne seront pas supprimés, mais leur localisation devra être réattribuée.`
-          : "L’image du plan et son enregistrement seront définitivement supprimés.",
-    });
+    const confirmation =
+      await dialog.delete({
+        title: "Supprimer ce plan ?",
+        itemName: plan.nom,
+        description:
+          nombreEquipements > 0
+            ? `${nombreEquipements} équipement(s) sont associés à ce plan. Ils ne seront pas supprimés, mais leur localisation devra être réattribuée.`
+            : "L’image du plan et son enregistrement seront définitivement supprimés.",
+      });
 
     if (!confirmation) return;
 
-    setDeletingId(plan.id);
+    try {
+      setDeletingId(plan.id);
+      setErreur(null);
 
-    const { error: updateError } = await supabase
-      .from("equipements")
-      .update({
-        plan_id: null,
-        position_x: null,
-        position_y: null,
-      })
-      .eq("plan_id", plan.id);
+      let equipementsQuery = supabase
+        .from("equipements")
+        .update({
+          plan_id: null,
+          position_x: null,
+          position_y: null,
+        })
+        .eq("plan_id", plan.id);
 
-    if (updateError) {
-      setDeletingId(null);
-      toast.error(
-        "Impossible de détacher les équipements",
-        updateError.message
-      );
-      return;
-    }
+      if (
+        !vueTousMagasins &&
+        magasinActif?.id
+      ) {
+        equipementsQuery =
+          equipementsQuery.eq(
+            "magasin_id",
+            magasinActif.id
+          );
+      }
 
-    const { error: deleteError } = await supabase
-      .from("plans")
-      .delete()
-      .eq("id", plan.id);
+      const { error: updateError } =
+        await equipementsQuery;
 
-    if (deleteError) {
-      setDeletingId(null);
-      toast.error("Erreur de suppression", deleteError.message);
-      return;
-    }
-
-    if (plan.image_path) {
-      const { error: storageError } = await supabase.storage
-        .from("plans")
-        .remove([plan.image_path]);
-
-      if (storageError) {
-        toast.warning(
-          "Plan supprimé de la base",
-          "L’image n’a toutefois pas pu être supprimée du stockage."
+      if (updateError) {
+        throw new Error(
+          `Impossible de détacher les équipements : ${updateError.message}`
         );
       }
+
+      let deleteQuery = supabase
+        .from("plans")
+        .delete()
+        .eq("id", plan.id);
+
+      if (
+        !vueTousMagasins &&
+        magasinActif?.id
+      ) {
+        deleteQuery = deleteQuery.eq(
+          "magasin_id",
+          magasinActif.id
+        );
+      }
+
+      const { error: deleteError } =
+        await deleteQuery;
+
+      if (deleteError) {
+        throw deleteError;
+      }
+
+      if (plan.image_path) {
+        const { error: storageError } =
+          await supabase.storage
+            .from("plans")
+            .remove([plan.image_path]);
+
+        if (storageError) {
+          toast.warning(
+            "Plan supprimé de la base",
+            "L’image n’a toutefois pas pu être supprimée du stockage."
+          );
+        }
+      }
+
+      toast.success(
+        "Plan supprimé",
+        plan.nom
+      );
+
+      await chargerPlans();
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Une erreur inconnue est survenue.";
+
+      setErreur(message);
+      toast.error(
+        "Erreur de suppression",
+        message
+      );
+    } finally {
+      setDeletingId(null);
     }
+  }
 
-    setDeletingId(null);
-    toast.success("Plan supprimé", plan.nom);
-
-    await chargerPlans();
+  function changerMagasin(value: string) {
+    changerMagasinActif(
+      value === "__TOUS__"
+        ? null
+        : value
+    );
   }
 
   return (
@@ -285,53 +455,112 @@ export default function PlansPage() {
       <AppPage
         title="Plans"
         subtitle="Gestion des plans du magasin et cartographie interactive des équipements."
-      >
-        <AccessControl role={role} roles={["ADMIN", "DM"]}>
-          <AppCard title="Ajouter un plan">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_1fr_auto] md:items-end">
-              <AppInput
-                label="Nom du plan"
-                placeholder="RDC, Réserve, Cour matériaux..."
-                value={nom}
-                onChange={(event) => setNom(event.target.value)}
-              />
+        actions={
+          peutChangerMagasin ? (
+            <select
+              value={
+                vueTousMagasins
+                  ? "__TOUS__"
+                  : magasinActif?.id ?? ""
+              }
+              onChange={(event) =>
+                changerMagasin(
+                  event.target.value
+                )
+              }
+              className="rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+            >
+              <option value="__TOUS__">
+                Tous les magasins
+              </option>
 
-              <div className="space-y-2">
-                <label
-                  htmlFor="plan-file"
-                  className="block text-sm font-semibold text-gray-700 dark:text-slate-300"
+              {(
+                magasinsDisponibles as readonly MagasinOption[]
+              ).map((magasin) => (
+                <option
+                  key={magasin.id}
+                  value={magasin.id}
                 >
-                  Image du plan
-                </label>
+                  {magasin.nom}
+                </option>
+              ))}
+            </select>
+          ) : undefined
+        }
+      >
+        {erreur && (
+          <div className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+            <span>{erreur}</span>
+          </div>
+        )}
 
-                <input
-                  ref={fileInputRef}
-                  id="plan-file"
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp"
-                  onChange={(event) =>
-                    setFichier(event.target.files?.[0] || null)
-                  }
-                  className="block w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-gray-700 file:mr-4 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:font-semibold file:text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:file:bg-slate-800 dark:file:text-slate-200"
-                />
-              </div>
+       {peutAjouterPlan && (
+  <AppCard title="Ajouter un plan">
+    {vueTousMagasins || !magasinActif ? (
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+        Sélectionne un magasin précis pour ajouter un plan.
+      </div>
+    ) : (
+      <>
+        <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200">
+          Le plan sera rattaché au magasin{" "}
+          <strong>{magasinActif.nom}</strong>.
+        </div>
 
-              <AppButton loading={loading} onClick={ajouterPlan}>
-                <Upload size={16} />
-                Ajouter
-              </AppButton>
-            </div>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_1fr_auto] md:items-end">
+          <AppInput
+            label="Nom du plan"
+            placeholder="RDC, Réserve, Cour matériaux..."
+            value={nom}
+            onChange={(event) =>
+              setNom(event.target.value)
+            }
+          />
 
-            {fichier && (
-              <p className="mt-3 text-sm text-gray-500 dark:text-slate-400">
-                Fichier sélectionné : {fichier.name}
-              </p>
-            )}
-          </AppCard>
-        </AccessControl>
+          <div className="space-y-2">
+            <label
+              htmlFor="plan-file"
+              className="block text-sm font-semibold text-gray-700 dark:text-slate-300"
+            >
+              Image du plan
+            </label>
+
+            <input
+              ref={fileInputRef}
+              id="plan-file"
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              onChange={(event) =>
+                setFichier(
+                  event.target.files?.[0] ?? null
+                )
+              }
+              className="block w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-gray-700 file:mr-4 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:font-semibold file:text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:file:bg-slate-800 dark:file:text-slate-200"
+            />
+          </div>
+
+          <AppButton
+            loading={loading}
+            onClick={ajouterPlan}
+          >
+            <Upload size={16} />
+            Ajouter
+          </AppButton>
+        </div>
+
+        {fichier && (
+          <p className="mt-3 text-sm text-gray-500 dark:text-slate-400">
+            Fichier sélectionné : {fichier.name}
+          </p>
+        )}
+      </>
+    )}
+  </AppCard>
+)}
 
         <AppCard title="Plans enregistrés">
-          {loadingPlans ? (
+          {loadingPlans || authLoading ? (
             <div className="py-10 text-center text-gray-500 dark:text-slate-400">
               Chargement des plans...
             </div>
@@ -339,15 +568,41 @@ export default function PlansPage() {
             <AppEmptyState
               icon={<Map size={42} />}
               title="Aucun plan"
-              description="Ajoute un premier plan pour commencer à positionner les équipements."
+              description={
+                vueTousMagasins
+                  ? "Aucun plan n’est disponible dans les magasins consultés."
+                  : "Ajoute un premier plan pour commencer à positionner les équipements."
+              }
             />
           ) : (
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2 2xl:grid-cols-3">
               {plans.map((plan) => {
-                const total = equipementsDuPlan(plan.id).length;
-                const enService = compterEtat(plan.id, "En service");
-                const maintenance = compterEtat(plan.id, "En maintenance");
-                const horsService = compterEtat(plan.id, "Hors service");
+                const total =
+                  equipementsDuPlan(
+                    plan.id
+                  ).length;
+
+                const enService =
+                  compterEtat(
+                    plan.id,
+                    "En service"
+                  );
+
+                const maintenance =
+                  compterEtat(
+                    plan.id,
+                    "En maintenance"
+                  ) +
+                  compterEtat(
+                    plan.id,
+                    "Maintenance"
+                  );
+
+                const horsService =
+                  compterEtat(
+                    plan.id,
+                    "Hors service"
+                  );
 
                 return (
                   <article
@@ -355,7 +610,9 @@ export default function PlansPage() {
                     className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg dark:border-slate-800 dark:bg-slate-950"
                   >
                     <Link
-                      href={`/plans/${encodeURIComponent(plan.id)}`}
+                      href={`/plans/${encodeURIComponent(
+                        plan.id
+                      )}`}
                       className="group block overflow-hidden"
                     >
                       <div className="relative">
@@ -366,7 +623,8 @@ export default function PlansPage() {
                         />
 
                         <div className="absolute right-3 top-3 rounded-full bg-black/70 px-3 py-1 text-xs font-semibold text-white backdrop-blur">
-                          {total} équipement{total > 1 ? "s" : ""}
+                          {total} équipement
+                          {total > 1 ? "s" : ""}
                         </div>
                       </div>
                     </Link>
@@ -386,8 +644,15 @@ export default function PlansPage() {
 
                         <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">
                           Ajouté le{" "}
-                          {new Date(plan.created_at).toLocaleDateString("fr-FR")}
-                          {plan.largeur && plan.hauteur
+                          {plan.created_at
+                            ? new Date(
+                                plan.created_at
+                              ).toLocaleDateString(
+                                "fr-FR"
+                              )
+                            : "—"}
+                          {plan.largeur &&
+                          plan.hauteur
                             ? ` • ${plan.largeur} × ${plan.hauteur}px`
                             : ""}
                         </p>
@@ -420,7 +685,11 @@ export default function PlansPage() {
                       </div>
 
                       <div className="flex flex-wrap gap-2">
-                        <Link href={`/plans/${encodeURIComponent(plan.id)}`}>
+                        <Link
+                          href={`/plans/${encodeURIComponent(
+                            plan.id
+                          )}`}
+                        >
                           <AppButton
                             variant="secondary"
                             className="px-3 py-2 text-xs"
@@ -444,12 +713,22 @@ export default function PlansPage() {
                           </AppButton>
                         </a>
 
-                        <AccessControl role={role} roles={["ADMIN"]}>
+                        <AccessControl
+                          role={role}
+                          roles={["ADMIN"]}
+                        >
                           <AppButton
                             variant="danger"
                             className="px-3 py-2 text-xs"
-                            loading={deletingId === plan.id}
-                            onClick={() => supprimerPlan(plan)}
+                            loading={
+                              deletingId ===
+                              plan.id
+                            }
+                            onClick={() =>
+                              void supprimerPlan(
+                                plan
+                              )
+                            }
                           >
                             <Trash2 size={14} />
                             Supprimer
@@ -478,19 +757,30 @@ function Statistique({
   className: string;
 }) {
   return (
-    <div className={`rounded-xl p-3 ${className}`}>
-      <p className="text-xs opacity-80">{label}</p>
-      <p className="mt-1 text-xl font-bold">{valeur}</p>
+    <div
+      className={`rounded-xl p-3 ${className}`}
+    >
+      <p className="text-xs opacity-80">
+        {label}
+      </p>
+
+      <p className="mt-1 text-xl font-bold">
+        {valeur}
+      </p>
     </div>
   );
 }
 
 function lireDimensionsImage(
   fichier: File
-): Promise<{ largeur: number; hauteur: number } | null> {
+): Promise<{
+  largeur: number;
+  hauteur: number;
+} | null> {
   return new Promise((resolve) => {
     const image = new Image();
-    const objectUrl = URL.createObjectURL(fichier);
+    const objectUrl =
+      URL.createObjectURL(fichier);
 
     image.onload = () => {
       const dimensions = {

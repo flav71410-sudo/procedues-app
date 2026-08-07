@@ -1,13 +1,23 @@
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/lib/supabase/client";
 
 export async function getCurrentUser() {
   const {
-    data: { session },
-  } = await supabase.auth.getSession();
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
 
-  return session?.user ?? null;
+  if (error) {
+    console.error("Erreur getCurrentUser :", error);
+    return null;
+  }
+
+  return user;
 }
 
 export async function logout() {
-  await supabase.auth.signOut();
+  const { error } = await supabase.auth.signOut();
+
+  if (error) {
+    throw error;
+  }
 }

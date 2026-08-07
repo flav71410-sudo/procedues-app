@@ -1,12 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import {
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
+import {
+  useParams,
+  useRouter,
+} from "next/navigation";
 
 import AppShell from "@/components/AppShell";
 import InteractivePlan, {
   EquipementMap,
-  Plan,
+  Plan as InteractivePlanType,
 } from "@/components/plans/InteractivePlan";
 import {
   AppButton,
@@ -14,149 +21,179 @@ import {
   AppEmptyState,
   AppPage,
 } from "@/components/ui";
-import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/providers/AuthProvider";
 import { useToast } from "@/providers/ToastProvider";
+import {
+  getPlan,
+  getPlanEquipements,
+  getTousEquipements,
+} from "@/services/plansService";
+import type {
+  Plan,
+  PlanEquipement,
+} from "@/types/plans";
 
-type SupabaseEquipement = {
-  id: string;
-  numero: string;
-  nom: string;
-  etat: string;
-  position_x: number | null;
-  position_y: number | null;
-  types_equipements:
-    | {
-        nom: string;
-      }
-    | {
-        nom: string;
-      }[]
-    | null;
-};
+function formaterEquipements(
+  items: PlanEquipement[]
+): EquipementMap[] {
+  return items.map((item) => ({
+    id: item.id,
+    numero: item.numero,
+    nom: item.nom,
+    etat: item.etat,
+    position_x: item.position_x,
+    position_y: item.position_y,
+    types_equipements: Array.isArray(
+      item.types_equipements
+    )
+      ? item.types_equipements[0] ?? null
+      : item.types_equipements ?? null,
+  }));
+}
+
+function convertirPlan(
+  plan: Plan
+): InteractivePlanType {
+  return {
+    id: plan.id,
+    nom: plan.nom,
+    image_url: plan.image_url,
+  };
+}
 
 export default function PlanDetailPage() {
   const params = useParams<{ id: string }>();
-  const id = params?.id;
-
+  const router = useRouter();
   const toast = useToast();
 
-  const [plan, setPlan] = useState<Plan | null>(null);
-  const [equipements, setEquipements] = useState<EquipementMap[]>([]);
-  const [allEquipements, setAllEquipements] = useState<EquipementMap[]>([]);
-  const [loading, setLoading] = useState(true);
+  const {
+    magasinActif,
+    vueTousMagasins,
+    loading: authLoading,
+  } = useAuth();
 
-  function formaterEquipements(
-    items: SupabaseEquipement[] | null
-  ): EquipementMap[] {
-    return (items || []).map((item) => ({
-      id: item.id,
-      numero: item.numero,
-      nom: item.nom,
-      etat: item.etat,
-      position_x: item.position_x,
-      position_y: item.position_y,
-      types_equipements: Array.isArray(item.types_equipements)
-        ? item.types_equipements[0] || null
-        : item.types_equipements || null,
-    }));
-  }
+  const id = params?.id;
 
-  async function chargerDonnees() {
-    if (!id) {
-      setLoading(false);
-      setPlan(null);
-      return;
-    }
+  const [plan, setPlan] =
+    useState<InteractivePlanType | null>(null);
 
-    setLoading(true);
+  const [planComplet, setPlanComplet] =
+    useState<Plan | null>(null);
 
-    const [
-      { data: planData, error: planError },
-      { data: equipementsData, error: equipementsError },
-      { data: allEquipementsData, error: allEquipementsError },
-    ] = await Promise.all([
-      supabase
-        .from("plans")
-        .select("id, nom, image_url")
-        .eq("id", id)
-        .maybeSingle(),
+  const [equipements, setEquipements] =
+    useState<EquipementMap[]>([]);
 
-      supabase
-        .from("equipements")
-        .select(`
-          id,
-          numero,
-          nom,
-          etat,
-          position_x,
-          position_y,
-          types_equipements(nom)
-        `)
-        .eq("plan_id", id)
-        .not("position_x", "is", null)
-        .not("position_y", "is", null)
-        .order("numero"),
+  const [allEquipements, setAllEquipements] =
+    useState<EquipementMap[]>([]);
 
-      supabase
-        .from("equipements")
-        .select(`
-          id,
-          numero,
-          nom,
-          etat,
-          position_x,
-          position_y,
-          types_equipements(nom)
-        `)
-        .order("numero"),
+  const [loading, setLoading] =
+    useState(true);
+
+  const chargerDonnees =
+    useCallback(async () => {
+      if (!id || authLoading) {
+        return;
+      }
+
+      try {
+        setLoading(true);
+
+        /*
+         * Première lecture :
+         * - en vue magasin, on protège l'accès avec le magasin actif ;
+         * - en vue Tous les magasins, on autorise la lecture du plan
+         *   afin de récupérer son magasin_id.
+         */
+        const planData = await getPlan(id, {
+          magasinId:
+            magasinActif?.id ?? null,
+          tousMagasins:
+            vueTousMagasins,
+        });
+
+        /*
+         * La cartographie doit toujours charger les équipements
+         * du magasin auquel appartient réellement le plan.
+         *
+         * C'est ce point qui permet de conserver l'ajout et le
+         * positionnement des équipements sur le plan, y compris
+         * après ouverture depuis la vue Tous les magasins.
+         */
+        const scopePlan = {
+          magasinId:
+            planData.magasin_id ?? null,
+          tousMagasins: false,
+        };
+
+        if (!planData.magasin_id) {
+          throw new Error(
+            "Ce plan n’est rattaché à aucun magasin. Attribue-lui un magasin_id dans Supabase avant d’utiliser la cartographie."
+          );
+        }
+
+        const [
+          equipementsPositionnes,
+          equipementsDuMagasin,
+        ] = await Promise.all([
+          getPlanEquipements(
+            planData.id,
+            scopePlan
+          ),
+          getTousEquipements(scopePlan),
+        ]);
+        console.log("Plan :", planData);
+console.log("Positionnés :", equipementsPositionnes);
+console.log("Tous magasin :", equipementsDuMagasin);
+
+        setPlanComplet(planData);
+        setPlan(convertirPlan(planData));
+        setEquipements(
+          formaterEquipements(
+            equipementsPositionnes
+          )
+        );
+        setAllEquipements(
+          formaterEquipements(
+            equipementsDuMagasin
+          )
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Une erreur inconnue est survenue.";
+
+        toast.error(
+          "Erreur de chargement du plan",
+          message
+        );
+
+        setPlan(null);
+        setPlanComplet(null);
+        setEquipements([]);
+        setAllEquipements([]);
+      } finally {
+        setLoading(false);
+      }
+    }, [
+      authLoading,
+      id,
+      magasinActif?.id,
+      toast,
+      vueTousMagasins,
     ]);
 
-    if (planError) {
-      toast.error("Erreur de chargement du plan", planError.message);
-      setPlan(null);
-      setLoading(false);
-      return;
-    }
-
-    if (equipementsError) {
-      toast.error(
-        "Erreur de chargement des équipements positionnés",
-        equipementsError.message
-      );
-    }
-
-    if (allEquipementsError) {
-      toast.error(
-        "Erreur de chargement des équipements",
-        allEquipementsError.message
-      );
-    }
-
-    setPlan(planData || null);
-
-    setEquipements(
-      formaterEquipements(
-        (equipementsData as SupabaseEquipement[] | null) || []
-      )
-    );
-
-    setAllEquipements(
-      formaterEquipements(
-        (allEquipementsData as SupabaseEquipement[] | null) || []
-      )
-    );
-
-    setLoading(false);
-  }
-
   useEffect(() => {
-    chargerDonnees();
-  }, [id]);
+    void chargerDonnees();
+  }, [chargerDonnees]);
 
-  if (loading) {
+  if (loading || authLoading) {
     return (
       <AppShell>
-        <AppPage title="Plan" subtitle="Chargement du plan...">
+        <AppPage
+          title="Plan"
+          subtitle="Chargement du plan..."
+        >
           <AppCard>
             <p className="text-gray-500 dark:text-slate-400">
               Chargement de la cartographie...
@@ -167,7 +204,7 @@ export default function PlanDetailPage() {
     );
   }
 
-  if (!id || !plan) {
+  if (!id || !plan || !planComplet) {
     return (
       <AppShell>
         <AppPage
@@ -176,12 +213,12 @@ export default function PlanDetailPage() {
         >
           <AppEmptyState
             title="Aucun plan trouvé"
-            description="Ce plan n’existe pas, a été supprimé ou son adresse est incorrecte."
+            description="Ce plan n’existe pas, n’est pas rattaché au magasin consulté ou a été supprimé."
             action={
               <AppButton
-                onClick={() => {
-                  window.location.href = "/plans";
-                }}
+                onClick={() =>
+                  router.push("/plans")
+                }
               >
                 Retour aux plans
               </AppButton>
@@ -200,9 +237,9 @@ export default function PlanDetailPage() {
         actions={
           <AppButton
             variant="secondary"
-            onClick={() => {
-              window.location.href = "/plans";
-            }}
+            onClick={() =>
+              router.push("/plans")
+            }
           >
             Retour
           </AppButton>

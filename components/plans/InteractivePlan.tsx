@@ -23,8 +23,8 @@ import {
   AppEmptyState,
 } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
-import { useToast } from "@/providers/ToastProvider";
 import { useAuth } from "@/providers/AuthProvider";
+import { useToast } from "@/providers/ToastProvider";
 
 export type Plan = {
   id: string;
@@ -51,6 +51,27 @@ type Props = {
   onRefresh: () => void | Promise<void>;
 };
 
+type PositionUpdate = {
+  id: string;
+  plan_id: string | null;
+  position_x: number | null;
+  position_y: number | null;
+};
+
+function messageErreur(error: unknown): string {
+  if (
+    error !== null &&
+    typeof error === "object" &&
+    "message" in error
+  ) {
+    return String(
+      (error as { message: unknown }).message
+    );
+  }
+
+  return "Une erreur inconnue est survenue.";
+}
+
 export default function InteractivePlan({
   plan,
   equipements,
@@ -60,15 +81,41 @@ export default function InteractivePlan({
   const toast = useToast();
   const planRef = useRef<HTMLDivElement | null>(null);
 
-  const [selected, setSelected] = useState<EquipementMap | null>(null);
-  const [equipementToPlaceId, setEquipementToPlaceId] = useState("");
-  const [placementMode, setPlacementMode] = useState(false);
-  const [filtre, setFiltre] = useState("Tous");
-  const [draggingMarker, setDraggingMarker] = useState(false);
-  const [savingPosition, setSavingPosition] = useState(false);
+  const [selected, setSelected] =
+    useState<EquipementMap | null>(null);
+
+  const [
+    equipementToPlaceId,
+    setEquipementToPlaceId,
+  ] = useState("");
+
+  const [placementMode, setPlacementMode] =
+    useState(false);
+
+  const [filtre, setFiltre] =
+    useState("Tous");
+
+  const [
+    draggingMarker,
+    setDraggingMarker,
+  ] = useState(false);
+
+  const [
+    savingPosition,
+    setSavingPosition,
+  ] = useState(false);
 
   const { role } = useAuth();
-  const canEdit = role === "ADMIN" || role === "DM";
+
+  const roleNormalise = String(
+    role ?? ""
+  ).toUpperCase();
+
+  const canEdit = [
+    "ADMIN",
+    "SUPER_ADMIN",
+    "DM",
+  ].includes(roleNormalise);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -78,13 +125,15 @@ export default function InteractivePlan({
     })
   );
 
-  const equipementsDisponibles = allEquipements.filter(
-    (equipement) =>
-      !equipements.some(
-        (equipementPositionne) =>
-          equipementPositionne.id === equipement.id
-      )
-  );
+  const equipementsDisponibles =
+    allEquipements.filter(
+      (equipement) =>
+        !equipements.some(
+          (equipementPositionne) =>
+            equipementPositionne.id ===
+            equipement.id
+        )
+    );
 
   const categories: string[] = [
     "Tous",
@@ -93,9 +142,13 @@ export default function InteractivePlan({
         equipements
           .map(
             (equipement) =>
-              equipement.types_equipements?.nom
+              equipement
+                .types_equipements?.nom
           )
-          .filter((nom): nom is string => Boolean(nom))
+          .filter(
+            (nom): nom is string =>
+              Boolean(nom)
+          )
       )
     ),
   ];
@@ -105,17 +158,23 @@ export default function InteractivePlan({
       ? equipements
       : equipements.filter(
           (equipement) =>
-            equipement.types_equipements?.nom === filtre
+            equipement
+              .types_equipements?.nom ===
+            filtre
         );
 
-  function nombreParCategorie(categorie: string) {
+  function nombreParCategorie(
+    categorie: string
+  ) {
     if (categorie === "Tous") {
       return equipements.length;
     }
 
     return equipements.filter(
       (equipement) =>
-        equipement.types_equipements?.nom === categorie
+        equipement
+          .types_equipements?.nom ===
+        categorie
     ).length;
   }
 
@@ -131,12 +190,13 @@ export default function InteractivePlan({
       return;
     }
 
-    
-  
+    const rect =
+      event.currentTarget.getBoundingClientRect();
 
-    const rect = event.currentTarget.getBoundingClientRect();
-
-    if (rect.width <= 0 || rect.height <= 0) {
+    if (
+      rect.width <= 0 ||
+      rect.height <= 0
+    ) {
       toast.error(
         "Erreur de positionnement",
         "Les dimensions du plan sont invalides."
@@ -149,7 +209,9 @@ export default function InteractivePlan({
       Math.min(
         10000,
         Math.round(
-          ((event.clientX - rect.left) / rect.width) * 10000
+          ((event.clientX - rect.left) /
+            rect.width) *
+            10000
         )
       )
     );
@@ -159,48 +221,82 @@ export default function InteractivePlan({
       Math.min(
         10000,
         Math.round(
-          ((event.clientY - rect.top) / rect.height) * 10000
+          ((event.clientY - rect.top) /
+            rect.height) *
+            10000
         )
       )
     );
 
     setSavingPosition(true);
 
-    const { error } = await supabase
-      .from("equipements")
-      .update({
-        plan_id: plan.id,
-        position_x: positionX,
-        position_y: positionY,
-      })
-      .eq("id", equipementToPlaceId);
+    try {
+      const result = await supabase
+        .from("equipements")
+        .update({
+          plan_id: plan.id,
+          position_x: positionX,
+          position_y: positionY,
+        })
+        .eq("id", equipementToPlaceId)
+        .select(
+          "id, plan_id, position_x, position_y"
+        )
+        .maybeSingle();
 
-    setSavingPosition(false);
+      const updateError: unknown =
+        result.error;
 
-    if (error) {
-      toast.error("Erreur de positionnement", error.message);
-      return;
+      if (updateError) {
+        toast.error(
+          "Erreur de positionnement",
+          messageErreur(updateError)
+        );
+        return;
+      }
+
+      const updated =
+        result.data as PositionUpdate | null;
+
+      if (!updated) {
+        toast.error(
+          "Enregistrement refusé",
+          "Aucun équipement n’a été modifié. Vérifie la politique UPDATE de la table equipements."
+        );
+        return;
+      }
+
+      const equipementPlace =
+        allEquipements.find(
+          (equipement) =>
+            equipement.id ===
+            equipementToPlaceId
+        );
+
+      setPlacementMode(false);
+      setEquipementToPlaceId("");
+
+      toast.success(
+        "Équipement positionné",
+        equipementPlace
+          ? `${equipementPlace.numero} a été ajouté au plan.`
+          : "La position a été enregistrée."
+      );
+
+      await onRefresh();
+    } catch (error: unknown) {
+      toast.error(
+        "Erreur de positionnement",
+        messageErreur(error)
+      );
+    } finally {
+      setSavingPosition(false);
     }
-
-    const equipementPlace = allEquipements.find(
-      (equipement) =>
-        equipement.id === equipementToPlaceId
-    );
-
-    setPlacementMode(false);
-    setEquipementToPlaceId("");
-
-    toast.success(
-      "Équipement positionné",
-      equipementPlace
-        ? `${equipementPlace.numero} a été ajouté au plan.`
-        : "La position a été enregistrée."
-    );
-
-    await onRefresh();
   }
 
-  function handleDragStart(_event: DragStartEvent) {
+  function handleDragStart(
+    _event: DragStartEvent
+  ) {
     if (!canEdit) {
       return;
     }
@@ -208,17 +304,24 @@ export default function InteractivePlan({
     setDraggingMarker(true);
   }
 
-  async function handleDragEnd(event: DragEndEvent) {
+  async function handleDragEnd(
+    event: DragEndEvent
+  ) {
     setDraggingMarker(false);
 
-    
-  
+    if (!canEdit) {
+      return;
+    }
 
-    const equipementId = String(event.active.id);
-
-    const equipement = equipements.find(
-      (item) => item.id === equipementId
+    const equipementId = String(
+      event.active.id
     );
+
+    const equipement =
+      equipements.find(
+        (item) =>
+          item.id === equipementId
+      );
 
     if (
       !equipement ||
@@ -229,9 +332,13 @@ export default function InteractivePlan({
       return;
     }
 
-    const rect = planRef.current.getBoundingClientRect();
+    const rect =
+      planRef.current.getBoundingClientRect();
 
-    if (rect.width <= 0 || rect.height <= 0) {
+    if (
+      rect.width <= 0 ||
+      rect.height <= 0
+    ) {
       toast.error(
         "Erreur de déplacement",
         "Les dimensions du plan sont invalides."
@@ -240,52 +347,97 @@ export default function InteractivePlan({
     }
 
     const deltaX =
-      (event.delta.x / rect.width) * 10000;
+      (event.delta.x / rect.width) *
+      10000;
 
     const deltaY =
-      (event.delta.y / rect.height) * 10000;
+      (event.delta.y / rect.height) *
+      10000;
 
-    const nouvellePositionX = Math.max(
-      0,
-      Math.min(
-        10000,
-        Math.round(equipement.position_x + deltaX)
-      )
-    );
+    const nouvellePositionX =
+      Math.max(
+        0,
+        Math.min(
+          10000,
+          Math.round(
+            equipement.position_x +
+              deltaX
+          )
+        )
+      );
 
-    const nouvellePositionY = Math.max(
-      0,
-      Math.min(
-        10000,
-        Math.round(equipement.position_y + deltaY)
-      )
-    );
+    const nouvellePositionY =
+      Math.max(
+        0,
+        Math.min(
+          10000,
+          Math.round(
+            equipement.position_y +
+              deltaY
+          )
+        )
+      );
 
     setSavingPosition(true);
 
-    const { error } = await supabase
-      .from("equipements")
-      .update({
-        plan_id: plan.id,
-        position_x: nouvellePositionX,
-        position_y: nouvellePositionY,
-      })
-      .eq("id", equipement.id);
+    try {
+      const result = await supabase
+        .from("equipements")
+        .update({
+          plan_id: plan.id,
+          position_x:
+            nouvellePositionX,
+          position_y:
+            nouvellePositionY,
+        })
+        .eq("id", equipement.id)
+        .select(
+          "id, plan_id, position_x, position_y"
+        )
+        .maybeSingle();
 
-    setSavingPosition(false);
+      const updateError: unknown =
+        result.error;
 
-    if (error) {
-      toast.error("Erreur de déplacement", error.message);
+      if (updateError) {
+        toast.error(
+          "Erreur de déplacement",
+          messageErreur(updateError)
+        );
+
+        await onRefresh();
+        return;
+      }
+
+      const updated =
+        result.data as PositionUpdate | null;
+
+      if (!updated) {
+        toast.error(
+          "Déplacement refusé",
+          "Aucun équipement n’a été modifié. Vérifie la politique UPDATE de la table equipements."
+        );
+
+        await onRefresh();
+        return;
+      }
+
+      toast.success(
+        "Position enregistrée",
+        `${equipement.numero} a été déplacé.`
+      );
+
       await onRefresh();
-      return;
+    } catch (error: unknown) {
+      toast.error(
+        "Erreur de déplacement",
+        messageErreur(error)
+      );
+
+      await onRefresh();
+    } finally {
+      setSavingPosition(false);
     }
-
-    toast.success(
-      "Position enregistrée",
-      `${equipement.numero} a été déplacé.`
-    );
-
-    await onRefresh();
   }
 
   function handleDragCancel() {
@@ -298,76 +450,98 @@ export default function InteractivePlan({
         {canEdit && (
           <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto_auto]">
             <select
-            value={equipementToPlaceId}
-            onChange={(event) =>
-              setEquipementToPlaceId(event.target.value)
-            }
-            disabled={placementMode || savingPosition}
-            className="rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-gray-900 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-          >
-            <option value="">
-              Sélectionner un équipement à placer...
-            </option>
-
-            {equipementsDisponibles.map((equipement) => (
-              <option
-                key={equipement.id}
-                value={equipement.id}
-              >
-                {equipement.numero} — {equipement.nom}
-              </option>
-            ))}
-          </select>
-
-          <AppButton
-            loading={savingPosition}
-            disabled={
-              !equipementToPlaceId ||
-              placementMode ||
-              savingPosition
-            }
-            onClick={() => setPlacementMode(true)}
-          >
-            Placer
-          </AppButton>
-
-          {placementMode && (
-            <AppButton
-              variant="danger"
-              disabled={savingPosition}
-              onClick={() => {
-                setPlacementMode(false);
-                setEquipementToPlaceId("");
-              }}
+              value={equipementToPlaceId}
+              onChange={(event) =>
+                setEquipementToPlaceId(
+                  event.target.value
+                )
+              }
+              disabled={
+                placementMode ||
+                savingPosition
+              }
+              className="rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-gray-900 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
             >
-              Annuler
+              <option value="">
+                Sélectionner un équipement à placer...
+              </option>
+
+              {equipementsDisponibles.map(
+                (equipement) => (
+                  <option
+                    key={equipement.id}
+                    value={equipement.id}
+                  >
+                    {equipement.numero} —{" "}
+                    {equipement.nom}
+                  </option>
+                )
+              )}
+            </select>
+
+            <AppButton
+              loading={savingPosition}
+              disabled={
+                !equipementToPlaceId ||
+                placementMode ||
+                savingPosition
+              }
+              onClick={() =>
+                setPlacementMode(true)
+              }
+            >
+              Placer
             </AppButton>
+
+            {placementMode && (
+              <AppButton
+                variant="danger"
+                disabled={savingPosition}
+                onClick={() => {
+                  setPlacementMode(false);
+                  setEquipementToPlaceId(
+                    ""
+                  );
+                }}
+              >
+                Annuler
+              </AppButton>
             )}
           </div>
         )}
 
-        {canEdit && placementMode && (
-          <div className="mb-4 rounded-xl border border-orange-400 bg-orange-50 p-4 text-sm font-medium text-orange-800 dark:border-orange-500/40 dark:bg-orange-950/30 dark:text-orange-300">
-            Clique sur le plan pour positionner
-            l’équipement sélectionné.
-          </div>
-        )}
+        {canEdit &&
+          placementMode && (
+            <div className="mb-4 rounded-xl border border-orange-400 bg-orange-50 p-4 text-sm font-medium text-orange-800 dark:border-orange-500/40 dark:bg-orange-950/30 dark:text-orange-300">
+              Clique sur le plan pour
+              positionner l’équipement
+              sélectionné.
+            </div>
+          )}
 
         <div className="mb-4 flex flex-wrap gap-2">
-          {categories.map((categorie) => (
-            <button
-              key={categorie}
-              type="button"
-              onClick={() => setFiltre(categorie)}
-              className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
-                filtre === categorie
-                  ? "bg-blue-600 text-white shadow"
-                  : "bg-slate-200 text-slate-700 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-              }`}
-            >
-              {categorie} ({nombreParCategorie(categorie)})
-            </button>
-          ))}
+          {categories.map(
+            (categorie) => (
+              <button
+                key={categorie}
+                type="button"
+                onClick={() =>
+                  setFiltre(categorie)
+                }
+                className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                  filtre === categorie
+                    ? "bg-blue-600 text-white shadow"
+                    : "bg-slate-200 text-slate-700 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                }`}
+              >
+                {categorie} (
+                {nombreParCategorie(
+                  categorie
+                )}
+                )
+              </button>
+            )
+          )}
         </div>
 
         <TransformWrapper
@@ -377,22 +551,31 @@ export default function InteractivePlan({
           centerOnInit
           wheel={{
             step: 0.1,
-            disabled: placementMode || draggingMarker,
+            disabled:
+              placementMode ||
+              draggingMarker,
           }}
           panning={{
-            disabled: placementMode || draggingMarker,
+            disabled:
+              placementMode ||
+              draggingMarker,
           }}
           doubleClick={{
             disabled: true,
           }}
         >
-          {({ zoomIn, zoomOut, resetTransform }) => (
+          {({
+            zoomIn,
+            zoomOut,
+            resetTransform,
+          }) => (
             <div className="space-y-3">
               <div className="flex flex-wrap gap-2">
                 <AppButton
                   variant="secondary"
                   disabled={
-                    placementMode || draggingMarker
+                    placementMode ||
+                    draggingMarker
                   }
                   onClick={() => zoomIn()}
                 >
@@ -402,9 +585,12 @@ export default function InteractivePlan({
                 <AppButton
                   variant="secondary"
                   disabled={
-                    placementMode || draggingMarker
+                    placementMode ||
+                    draggingMarker
                   }
-                  onClick={() => zoomOut()}
+                  onClick={() =>
+                    zoomOut()
+                  }
                 >
                   Zoom -
                 </AppButton>
@@ -412,9 +598,12 @@ export default function InteractivePlan({
                 <AppButton
                   variant="secondary"
                   disabled={
-                    placementMode || draggingMarker
+                    placementMode ||
+                    draggingMarker
                   }
-                  onClick={() => resetTransform()}
+                  onClick={() =>
+                    resetTransform()
+                  }
                 >
                   Réinitialiser
                 </AppButton>
@@ -427,17 +616,29 @@ export default function InteractivePlan({
                 >
                   <DndContext
                     sensors={sensors}
-                    onDragStart={handleDragStart}
-                    onDragEnd={handleDragEnd}
-                    onDragCancel={handleDragCancel}
+                    onDragStart={
+                      handleDragStart
+                    }
+                    onDragEnd={
+                      handleDragEnd
+                    }
+                    onDragCancel={
+                      handleDragCancel
+                    }
                   >
                     <div
                       ref={planRef}
-                      onClick={canEdit ? placerEquipementSurPlan : undefined}
+                      onClick={
+                        canEdit
+                          ? placerEquipementSurPlan
+                          : undefined
+                      }
                       className={`relative h-full w-full ${
-                        canEdit && placementMode
+                        canEdit &&
+                        placementMode
                           ? "cursor-crosshair"
-                          : canEdit && draggingMarker
+                          : canEdit &&
+                              draggingMarker
                             ? "cursor-grabbing"
                             : canEdit
                               ? "cursor-grab"
@@ -454,25 +655,42 @@ export default function InteractivePlan({
                       {equipementsFiltres.map(
                         (equipement) => (
                           <EquipmentMarker
-                            key={equipement.id}
-                            id={equipement.id}
-                            numero={equipement.numero}
-                            nom={equipement.nom}
-                            etat={equipement.etat}
+                            key={
+                              equipement.id
+                            }
+                            id={
+                              equipement.id
+                            }
+                            numero={
+                              equipement.numero
+                            }
+                            nom={
+                              equipement.nom
+                            }
+                            etat={
+                              equipement.etat
+                            }
                             type={
                               equipement
-                                .types_equipements?.nom
+                                .types_equipements
+                                ?.nom
                             }
                             x={
-                              equipement.position_x ?? 0
+                              equipement.position_x ??
+                              0
                             }
                             y={
-                              equipement.position_y ?? 0
+                              equipement.position_y ??
+                              0
                             }
                             onClick={() =>
-                              setSelected(equipement)
+                              setSelected(
+                                equipement
+                              )
                             }
-                            disabled={!canEdit}
+                            disabled={
+                              !canEdit
+                            }
                           />
                         )
                       )}
@@ -519,9 +737,11 @@ export default function InteractivePlan({
 
             <AppBadge
               variant={
-                selected.etat === "En service"
+                selected.etat ===
+                "En service"
                   ? "success"
-                  : selected.etat === "Hors service"
+                  : selected.etat ===
+                      "Hors service"
                     ? "danger"
                     : "warning"
               }
@@ -535,8 +755,9 @@ export default function InteractivePlan({
               </p>
 
               <p className="font-semibold text-gray-900 dark:text-white">
-                {selected.types_equipements?.nom ||
-                  "Non défini"}
+                {selected
+                  .types_equipements
+                  ?.nom || "Non défini"}
               </p>
             </div>
 
@@ -546,8 +767,12 @@ export default function InteractivePlan({
               </p>
 
               <p className="font-semibold text-gray-900 dark:text-white">
-                X : {selected.position_x ?? "—"} · Y :{" "}
-                {selected.position_y ?? "—"}
+                X :{" "}
+                {selected.position_x ??
+                  "—"}{" "}
+                · Y :{" "}
+                {selected.position_y ??
+                  "—"}
               </p>
             </div>
 
@@ -565,7 +790,8 @@ export default function InteractivePlan({
 
       <div className="xl:col-span-2">
         <AppCard title="Équipements sur ce plan">
-          {equipementsFiltres.length === 0 ? (
+          {equipementsFiltres.length ===
+          0 ? (
             <AppEmptyState
               icon={<MapPin size={42} />}
               title={
@@ -589,19 +815,24 @@ export default function InteractivePlan({
                     key={equipement.id}
                     type="button"
                     onClick={() =>
-                      setSelected(equipement)
+                      setSelected(
+                        equipement
+                      )
                     }
                     className="flex w-full flex-col gap-3 rounded-xl border border-gray-200 p-4 text-left transition hover:bg-gray-50 dark:border-slate-800 dark:hover:bg-slate-900 sm:flex-row sm:items-center sm:justify-between"
                   >
                     <div>
                       <p className="font-bold text-gray-900 dark:text-white">
-                        {equipement.numero} —{" "}
-                        {equipement.nom}
+                        {
+                          equipement.numero
+                        }{" "}
+                        — {equipement.nom}
                       </p>
 
                       <p className="text-sm text-gray-500 dark:text-slate-400">
                         {equipement
-                          .types_equipements?.nom ||
+                          .types_equipements
+                          ?.nom ||
                           "Type non défini"}
                       </p>
                     </div>

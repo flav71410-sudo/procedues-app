@@ -1,28 +1,30 @@
+import type { ElementType } from "react";
 import {
-  Home,
+  BadgeCheck,
+  BarChart3,
+  Building2,
+  CalendarDays,
   ClipboardList,
   FileText,
-  Shield,
-  Wrench,
-  CalendarDays,
-  Settings,
-  Users,
-  BadgeCheck,
-  Store,
-  Building2,
-  ScrollText,
-  Package,
+  Home,
   Map,
+  Package,
+  ScrollText,
+  Settings,
+  Store,
+  TrendingUp,
+  UserCircle,
+  Users,
+  Wrench,
 } from "lucide-react";
-import { ElementType } from "react";
 
-export type Role = "ADMIN" | "DM" | "PERMANENT";
+import type { Permission } from "@/lib/permissions";
 
 export type NavigationItem = {
   label: string;
   href: string;
   icon: ElementType;
-  roles: Role[];
+  permission: Permission;
 };
 
 export const navigation: {
@@ -35,7 +37,19 @@ export const navigation: {
       label: "Tableau de bord",
       href: "/dashboard",
       icon: Home,
-      roles: ["ADMIN", "DM", "PERMANENT"],
+      permission: "dashboard.view",
+    },
+    {
+      label: "Analytics",
+      href: "/analytics",
+      icon: BarChart3,
+      permission: "dashboard.view",
+    },
+    {
+      label: "Mon profil",
+      href: "/profil",
+      icon: UserCircle,
+      permission: "dashboard.view",
     },
   ],
 
@@ -44,94 +58,94 @@ export const navigation: {
       label: "Consignes",
       href: "/consignes",
       icon: ClipboardList,
-      roles: ["ADMIN", "DM", "PERMANENT"],
+      permission: "consignes.view",
     },
     {
       label: "Documents",
       href: "/documents",
       icon: FileText,
-      roles: ["ADMIN", "DM", "PERMANENT"],
-    },
-    {
-      label: "Sécurité",
-      href: "/securite",
-      icon: Shield,
-      roles: ["ADMIN", "DM"],
+      permission: "documents.view",
     },
     {
       label: "Maintenance",
       href: "/maintenance",
       icon: Wrench,
-      roles: ["ADMIN", "DM", "PERMANENT"],
+      permission: "maintenance.view",
+    },
+    {
+      label: "Investissements",
+      href: "/investissements",
+      icon: TrendingUp,
+      permission: "investissements.view",
     },
     {
       label: "Planning",
       href: "/planning",
       icon: CalendarDays,
-      roles: ["ADMIN", "DM"],
+      permission: "planning.view",
     },
     {
       label: "Équipements",
       href: "/equipements",
       icon: Package,
-      roles: ["ADMIN", "DM", "PERMANENT"],
-    },
-    {
-      label: "Liste équipements",
-      href: "/equipements/liste",
-      icon: Package,
-      roles: ["ADMIN", "DM", "PERMANENT"],
+      permission: "equipements.view",
     },
     {
       label: "Plans",
       href: "/plans",
       icon: Map,
-      roles: ["ADMIN", "DM", "PERMANENT"],
+      permission: "plans.view",
     },
   ],
 
   administration: [
     {
-      label: "Centre admin",
-      href: "/admin",
-      icon: Settings,
-      roles: ["ADMIN"],
+      label: "Magasins",
+      href: "/admin/magasins",
+      icon: Store,
+      permission: "stores.view",
     },
     {
       label: "Utilisateurs",
       href: "/admin/utilisateurs",
       icon: Users,
-      roles: ["ADMIN"],
+      permission: "users.view",
     },
     {
       label: "Rôles",
       href: "/admin/roles",
       icon: BadgeCheck,
-      roles: ["ADMIN"],
+      permission: "roles.manage",
     },
     {
       label: "Secteurs",
       href: "/admin/secteurs",
       icon: Store,
-      roles: ["ADMIN"],
+      permission: "settings.manage",
     },
     {
       label: "Prestataires",
       href: "/admin/prestataires",
       icon: Building2,
-      roles: ["ADMIN", "DM"],
+      permission: "prestataires.view",
     },
     {
       label: "Paramètres",
       href: "/admin/parametres",
       icon: Settings,
-      roles: ["ADMIN"],
+      permission: "settings.view",
     },
     {
       label: "Journal système",
       href: "/admin/journal",
       icon: ScrollText,
-      roles: ["ADMIN"],
+      permission: "system.journal.view",
+    },
+    {
+      label: "clés d'activation",
+      href: "/admin/cles-activation",
+      icon: ScrollText,
+      permission: "system.journal.view",
     },
   ],
 };

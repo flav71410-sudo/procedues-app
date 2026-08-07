@@ -1,25 +1,277 @@
 "use client";
 
-import { ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
+import type { User } from "@supabase/supabase-js";
 
-import { DialogProvider } from "@/providers/DialogProvider";
-import { ToastProvider } from "@/providers/ToastProvider";
-import { AuthProvider } from "@/providers/AuthProvider";
+import { createClient } from "@/lib/supabase/client";
+import {
+  normalizeRole,
+  permissionsForRole,
+  roleCan,
+  type AppRole,
+  type Permission,
+} from "@/lib/permissions";
 
-type ProvidersProps = {
-  children: ReactNode;
+export type MagasinUtilisateur = {
+  id: string;
+  nom: string;
 };
 
-export default function Providers({
+export type ProfilUtilisateur = {
+  id: string;
+  email: string | null;
+  nom: string | null;
+  prenom: string | null;
+  actif: boolean;
+  role: AppRole;
+  roleId: string | null;
+  roleNom: string | null;
+  magasinId: string | null;
+  magasin: MagasinUtilisateur | null;
+};
+
+type AuthContextValue = {
+  user: User | null;
+  profil: ProfilUtilisateur | null;
+  role: AppRole;
+  permissions: readonly Permission[];
+  magasin: MagasinUtilisateur | null;
+  loading: boolean;
+  can: (permission: Permission) => boolean;
+  refreshProfile: () => Promise<void>;
+};
+
+const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+
+type ProfilRow = {
+  id: string;
+  email: string | null;
+  nom: string | null;
+  prenom: string | null;
+  actif: boolean | null;
+  role: string | null;
+  role_id: string | null;
+  magasin_id: string | null;
+};
+
+export function AuthProvider({
   children,
-}: ProvidersProps) {
-  return (
-    <ToastProvider>
-      <DialogProvider>
-        <AuthProvider>
-          {children}
-        </AuthProvider>
-      </DialogProvider>
-    </ToastProvider>
+}: {
+  children: ReactNode;
+}) {
+  const supabase = useMemo(() => createClient(), []);
+
+  const [user, setUser] = useState<User | null>(null);
+  const [profil, setProfil] = useState<ProfilUtilisateur | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const chargerUtilisateur = useCallback(async () => {
+    setLoading(true);
+
+    try {
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+      if (sessionError) {
+        console.error("Erreur session Supabase :", sessionError);
+      }
+
+      const utilisateur = session?.user ?? null;
+
+      if (!utilisateur) {
+        setUser(null);
+        setProfil(null);
+        return;
+      }
+
+      setUser(utilisateur);
+
+      const email = utilisateur.email?.toLowerCase() ?? "";
+
+      let requeteProfil = supabase
+        .from("profils")
+        .select(
+          "id, email, nom, prenom, actif, role, role_id, magasin_id"
+        );
+
+      // Recherche d'abord par UUID Auth ; l'email sert de secours.
+      requeteProfil = email
+        ? requeteProfil.or(`id.eq.${utilisateur.id},email.ilike.${email}`)
+        : requeteProfil.eq("id", utilisateur.id);
+
+      const { data: profilsData, error: profilError } =
+        await requeteProfil.limit(1);
+
+      if (profilError) {
+        console.error("Erreur lecture public.profils :", profilError);
+      }
+
+      const profilData = (profilsData?.[0] ?? null) as ProfilRow | null;
+
+      if (!profilData) {
+        // On conserve au moins l'utilisateur Auth au lieu d'afficher
+        // "Utilisateur non connecté".
+        setProfil({
+          id: utilisateur.id,
+          email: utilisateur.email ?? null,
+          nom: null,
+          prenom: null,
+          actif: true,
+          role: "PERMANENT",
+          roleId: null,
+          roleNom: null,
+          magasinId: null,
+          magasin: null,
+        });
+        return;
+      }
+
+      let roleNom: string | null = null;
+      let magasin: MagasinUtilisateur | null = null;
+
+      if (profilData.role_id) {
+        const { data, error } = await supabase
+          .from("roles")
+          .select("nom")
+          .eq("id", profilData.role_id)
+          .maybeSingle();
+
+        if (error) {
+          console.error("Erreur lecture public.roles :", error);
+        }
+
+        roleNom = data?.nom ?? null;
+      }
+
+      if (profilData.magasin_id) {
+        const { data, error } = await supabase
+          .from("magasins")
+          .select("id, nom")
+          .eq("id", profilData.magasin_id)
+          .maybeSingle();
+
+        if (error) {
+          console.error("Erreur lecture public.magasins :", error);
+        }
+
+        magasin = data
+          ? {
+              id: data.id,
+              nom: data.nom,
+            }
+          : null;
+      }
+
+      const role = normalizeRole(
+        roleNom ?? profilData.role ?? "PERMANENT"
+      );
+
+      setProfil({
+        id: profilData.id,
+        email: profilData.email ?? utilisateur.email ?? null,
+        nom: profilData.nom,
+        prenom: profilData.prenom,
+        actif: profilData.actif ?? true,
+        role,
+        roleId: profilData.role_id,
+        roleNom,
+        magasinId: profilData.magasin_id,
+        magasin,
+      });
+    } catch (error) {
+      console.error("Erreur inattendue AuthProvider :", error);
+      setUser(null);
+      setProfil(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [supabase]);
+
+  useEffect(() => {
+    void chargerUtilisateur();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+
+      // Laisse Supabase terminer le traitement du changement d'état,
+      // puis recharge le profil.
+      window.setTimeout(() => {
+        void chargerUtilisateur();
+      }, 0);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [chargerUtilisateur, supabase]);
+
+  const role = profil?.role ?? "PERMANENT";
+
+  const permissions = useMemo(
+    () => permissionsForRole(role),
+    [role]
   );
+
+  const can = useCallback(
+    (permission: Permission) => {
+      if (!user || !profil || !profil.actif) {
+        return false;
+      }
+
+      return roleCan(role, permission);
+    },
+    [profil, role, user]
+  );
+
+  const value = useMemo<AuthContextValue>(
+    () => ({
+      user,
+      profil,
+      role,
+      permissions,
+      magasin: profil?.magasin ?? null,
+      loading,
+      can,
+      refreshProfile: chargerUtilisateur,
+    }),
+    [
+      user,
+      profil,
+      role,
+      permissions,
+      loading,
+      can,
+      chargerUtilisateur,
+    ]
+  );
+
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export function useAuth() {
+  const context = useContext(AuthContext);
+
+  if (!context) {
+    throw new Error(
+      "useAuth doit être utilisé à l’intérieur de AuthProvider."
+    );
+  }
+
+  return context;
 }

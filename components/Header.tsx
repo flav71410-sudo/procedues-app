@@ -17,16 +17,11 @@ import {
 
 import NotificationCenter from "@/components/layout/NotificationCenter";
 import ThemeToggle from "@/components/layout/ThemeToggle";
-import { getCurrentUser, logout } from "@/services/auth";
-import { getProfil } from "@/services/profils";
+import { supabase } from "@/lib/supabase/client";
+import { roleLabel } from "@/lib/permissions";
+import { useAuth } from "@/providers/AuthProvider";
 import { rechercheGlobale } from "@/services/recherche";
 
-type Profil = {
-  nom: string;
-  prenom: string;
-  role: string;
-  secteur: string | null;
-};
 
 type ResultatRecherche = {
   type: string;
@@ -165,7 +160,7 @@ function SearchContent({
 export default function Header({
   onOpenMobileMenu,
 }: HeaderProps) {
-  const [profil, setProfil] = useState<Profil | null>(null);
+  const { profil, role, magasin, loading } = useAuth();
   const [recherche, setRecherche] = useState("");
   const [resultats, setResultats] = useState<
     ResultatRecherche[]
@@ -177,27 +172,6 @@ export default function Header({
 
   const userMenuRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    async function chargerProfil() {
-      try {
-        const user = await getCurrentUser();
-
-        if (!user) {
-          return;
-        }
-
-        const profilData = await getProfil(user.id);
-        setProfil(profilData);
-      } catch (error) {
-        console.error(
-          "Impossible de charger le profil :",
-          error,
-        );
-      }
-    }
-
-    chargerProfil();
-  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(async () => {
@@ -266,12 +240,17 @@ export default function Header({
 
   async function handleLogout() {
     try {
-      await logout();
+      const { error } = await supabase.auth.signOut();
+
+      if (error) {
+        throw error;
+      }
+
       window.location.href = "/";
     } catch (error) {
       console.error(
         "Erreur pendant la déconnexion :",
-        error,
+        error
       );
     }
   }
@@ -289,9 +268,16 @@ export default function Header({
     window.location.href = "/profil";
   }
 
-  const nomComplet = profil
-    ? `${profil.prenom} ${profil.nom}`
-    : "Utilisateur";
+  const nomComplet =
+    [profil?.prenom, profil?.nom]
+      .filter(Boolean)
+      .join(" ") ||
+    profil?.email ||
+    (loading ? "Chargement..." : "Utilisateur");
+
+  const libelleRole = loading
+    ? "Chargement..."
+    : roleLabel(role);
 
   return (
     <>
@@ -395,7 +381,7 @@ export default function Header({
                   </p>
 
                   <p className="max-w-40 truncate text-xs text-gray-500 dark:text-slate-400">
-                    {profil?.role || "Chargement..."}
+                    {libelleRole}
                   </p>
                 </div>
 
@@ -422,12 +408,11 @@ export default function Header({
                     </p>
 
                     <p className="mt-1 truncate text-sm text-gray-500 dark:text-slate-400">
-                      {profil?.role || "Rôle non défini"}
+                      {libelleRole}
                     </p>
-
-                    {profil?.secteur && (
+                    {magasin?.nom && (
                       <p className="mt-1 truncate text-xs text-gray-400 dark:text-slate-500">
-                        Secteur : {profil.secteur}
+                        Magasin : {magasin.nom}
                       </p>
                     )}
                   </div>
