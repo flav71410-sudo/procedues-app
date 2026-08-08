@@ -40,8 +40,8 @@ export default function ResetPasswordPage() {
     <main className="min-h-screen bg-[#0078b8] flex items-center justify-center p-6">
       <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-md">
         <img
-          src="/logo.png"
-          alt="Logo Castorama"
+          src="/secumanager-logo.png"
+          alt="Logo SécuManager"
           className="mx-auto mb-6 w-64 rounded-xl"
         />
 

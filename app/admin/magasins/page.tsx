@@ -331,7 +331,7 @@ export default function MagasinsPage() {
               </h1>
 
               <p className="mt-1 text-slate-600 dark:text-slate-300">
-                Gestion des établissements disponibles dans CastoManager.
+                Gestion des établissements disponibles dans SécuManager.
               </p>
             </div>
           </div>
@@ -543,7 +543,7 @@ export default function MagasinsPage() {
                     type="text"
                     value={nom}
                     onChange={(event) => setNom(event.target.value)}
-                    placeholder="Ex. Castorama Claye-Souilly"
+                    placeholder="Ex. SécuManager"
                     autoComplete="organization"
                     className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                   />

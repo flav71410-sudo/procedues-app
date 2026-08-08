@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+
 import type {
   CreateDocumentInput,
   DocumentFilters,
@@ -7,17 +8,21 @@ import type {
   UpdateDocumentInput,
 } from "@/types/documents";
 
+
 export class DocumentsError extends Error {
   constructor(message: string) {
     super(message);
+
     this.name = "DocumentsError";
   }
 }
+
 
 export type DocumentScope = {
   magasinId: string | null;
   tousMagasins?: boolean;
 };
+
 
 export type DocumentStats = {
   total: number;
@@ -26,11 +31,13 @@ export type DocumentStats = {
   avecSousDossier: number;
 };
 
+
 export type DocumentFolderNode = {
   dossier: string;
   sousDossiers: string[];
   total: number;
 };
+
 
 export type DevisStats = {
   total: number;
@@ -40,52 +47,81 @@ export type DevisStats = {
   investissementNPlus1: number;
   signes: number;
   nonSignes: number;
+
   montantEnAttenteHt: number;
   montantValideHt: number;
   montantRejeteHt: number;
   montantNPlus1Ht: number;
 };
 
-function getErrorMessage(error: unknown): string {
+
+/* =========================================================
+   OUTILS
+========================================================= */
+
+
+function getErrorMessage(
+  error: unknown
+): string {
   if (
     error &&
     typeof error === "object" &&
     "message" in error
   ) {
     return String(
-      (error as { message: unknown }).message
+      (
+        error as {
+          message: unknown;
+        }
+      ).message
     );
   }
 
   return "Une erreur inconnue est survenue.";
 }
 
-function throwDocumentsError(error: unknown): never {
+
+function throwDocumentsError(
+  error: unknown
+): never {
   throw new DocumentsError(
     getErrorMessage(error)
   );
 }
 
+
 function normalizeText(
-  value: string | null | undefined
+  value:
+    | string
+    | null
+    | undefined
 ): string {
   return (value ?? "").trim();
 }
 
+
 function normalizeTags(
-  tags: string[] | undefined
+  tags:
+    | string[]
+    | undefined
 ): string[] {
   return Array.from(
     new Set(
       (tags ?? [])
-        .map((tag) => tag.trim())
+        .map((tag) =>
+          tag.trim()
+        )
         .filter(Boolean)
     )
   );
 }
 
+
 function normalizeNumber(
-  value: number | null | undefined
+  value:
+    | number
+    | null
+    | undefined
 ): number | null {
   if (
     value === null ||
@@ -97,6 +133,7 @@ function normalizeNumber(
 
   return value;
 }
+
 
 function applyScope<T>(
   query: T,
@@ -117,18 +154,245 @@ function applyScope<T>(
   return query;
 }
 
-export async function getDocuments(
-  filters: DocumentFilters & {
-    tousMagasins?: boolean;
+
+/* =========================================================
+   LOCALISATION DU FICHIER STORAGE
+========================================================= */
+
+
+type DocumentStorageLocation = {
+  bucket:
+    | "documents"
+    | "documents-files";
+
+  path: string;
+};
+
+
+function getDocumentStorageLocation(
+  document: DocumentItem
+): DocumentStorageLocation | null {
+  const fichierPath =
+    document.fichier_path?.trim();
+
+  const fichierUrl =
+    document.fichier_url?.trim();
+
+
+  /*
+   * Nouveau système :
+   * fichier_path contient directement
+   * le chemin du fichier dans Storage.
+   */
+  if (fichierPath) {
+    const bucket =
+      fichierUrl?.includes(
+        "/documents-files/"
+      )
+        ? "documents-files"
+        : "documents";
+
+    return {
+      bucket,
+      path: fichierPath,
+    };
   }
+
+
+  if (!fichierUrl) {
+    return null;
+  }
+
+
+  /*
+   * Anciennes URL publiques
+   * du bucket documents-files.
+   */
+  const documentsFilesPublic =
+    "/storage/v1/object/public/documents-files/";
+
+  if (
+    fichierUrl.includes(
+      documentsFilesPublic
+    )
+  ) {
+    const path =
+      fichierUrl
+        .split(
+          documentsFilesPublic
+        )[1]
+        ?.split("?")[0];
+
+    if (!path) {
+      return null;
+    }
+
+    return {
+      bucket:
+        "documents-files",
+
+      path:
+        decodeURIComponent(
+          path
+        ),
+    };
+  }
+
+
+  /*
+   * URL signées documents-files.
+   */
+  const documentsFilesSigned =
+    "/storage/v1/object/sign/documents-files/";
+
+  if (
+    fichierUrl.includes(
+      documentsFilesSigned
+    )
+  ) {
+    const path =
+      fichierUrl
+        .split(
+          documentsFilesSigned
+        )[1]
+        ?.split("?")[0];
+
+    if (!path) {
+      return null;
+    }
+
+    return {
+      bucket:
+        "documents-files",
+
+      path:
+        decodeURIComponent(
+          path
+        ),
+    };
+  }
+
+
+  /*
+   * Anciennes URL publiques
+   * du bucket documents.
+   */
+  const documentsPublic =
+    "/storage/v1/object/public/documents/";
+
+  if (
+    fichierUrl.includes(
+      documentsPublic
+    )
+  ) {
+    const path =
+      fichierUrl
+        .split(
+          documentsPublic
+        )[1]
+        ?.split("?")[0];
+
+    if (!path) {
+      return null;
+    }
+
+    return {
+      bucket:
+        "documents",
+
+      path:
+        decodeURIComponent(
+          path
+        ),
+    };
+  }
+
+
+  /*
+   * URL signées
+   * du bucket documents.
+   */
+  const documentsSigned =
+    "/storage/v1/object/sign/documents/";
+
+  if (
+    fichierUrl.includes(
+      documentsSigned
+    )
+  ) {
+    const path =
+      fichierUrl
+        .split(
+          documentsSigned
+        )[1]
+        ?.split("?")[0];
+
+    if (!path) {
+      return null;
+    }
+
+    return {
+      bucket:
+        "documents",
+
+      path:
+        decodeURIComponent(
+          path
+        ),
+    };
+  }
+
+
+  /*
+   * Certains documents récents
+   * peuvent contenir directement
+   * un chemin Storage dans fichier_url.
+   */
+  if (
+    !fichierUrl.startsWith(
+      "http://"
+    ) &&
+    !fichierUrl.startsWith(
+      "https://"
+    )
+  ) {
+    return {
+      bucket:
+        "documents",
+
+      path:
+        fichierUrl,
+    };
+  }
+
+
+  return null;
+}
+
+
+/* =========================================================
+   DOCUMENTS
+========================================================= */
+
+
+export async function getDocuments(
+  filters:
+    DocumentFilters & {
+      tousMagasins?: boolean;
+    }
 ): Promise<DocumentItem[]> {
   try {
     let query = supabase
       .from("documents")
       .select("*");
 
-    if (!filters.tousMagasins) {
-      if (!filters.magasinId) {
+
+    if (
+      !filters.tousMagasins
+    ) {
+      if (
+        !filters.magasinId
+      ) {
         return [];
       }
 
@@ -138,12 +402,16 @@ export async function getDocuments(
       );
     }
 
-    if (filters.dossier?.trim()) {
+
+    if (
+      filters.dossier?.trim()
+    ) {
       query = query.eq(
         "dossier",
         filters.dossier.trim()
       );
     }
+
 
     if (
       filters.sousDossier?.trim()
@@ -154,6 +422,7 @@ export async function getDocuments(
       );
     }
 
+
     if (
       filters.categorie?.trim()
     ) {
@@ -163,12 +432,16 @@ export async function getDocuments(
       );
     }
 
-    if (filters.favoris) {
+
+    if (
+      filters.favoris
+    ) {
       query = query.eq(
         "favori",
         true
       );
     }
+
 
     if (
       filters.estDevis !==
@@ -180,24 +453,33 @@ export async function getDocuments(
       );
     }
 
-    if (filters.statutDevis) {
+
+    if (
+      filters.statutDevis
+    ) {
       query = query.eq(
         "statut_devis",
         filters.statutDevis
       );
     }
 
-    if (filters.anneeBudget) {
+
+    if (
+      filters.anneeBudget
+    ) {
       query = query.eq(
         "annee_budget",
         filters.anneeBudget
       );
     }
 
+
     query = query.eq(
       "archive",
-      filters.archives ?? false
+      filters.archives ??
+        false
     );
+
 
     query = query
       .order(
@@ -207,20 +489,31 @@ export async function getDocuments(
           nullsFirst: false,
         }
       )
-      .order("created_at", {
-        ascending: false,
-        nullsFirst: false,
-      });
+      .order(
+        "created_at",
+        {
+          ascending: false,
+          nullsFirst: false,
+        }
+      );
 
-    const { data, error } =
-      await query;
+
+    const {
+      data,
+      error,
+    } = await query;
+
 
     if (error) {
       throw error;
     }
 
+
     let documents =
-      (data ?? []) as DocumentItem[];
+      (
+        data ?? []
+      ) as DocumentItem[];
+
 
     if (
       filters.recherche?.trim()
@@ -230,43 +523,65 @@ export async function getDocuments(
           .trim()
           .toLowerCase();
 
+
       documents =
         documents.filter(
           (document) =>
             [
               document.titre,
+
               document.description ??
                 "",
+
               document.categorie,
-              document.dossier ?? "",
+
+              document.dossier ??
+                "",
+
               document.sous_dossier ??
                 "",
+
               document.fichier_nom,
-              document.auteur ?? "",
-              document.secteur ?? "",
+
+              document.auteur ??
+                "",
+
+              document.secteur ??
+                "",
+
               document.prestataire ??
                 "",
+
               document.statut_devis ??
                 "",
+
               String(
                 document.annee_budget ??
                   ""
               ),
+
               ...(
-                document.tags ?? []
+                document.tags ??
+                []
               ),
             ]
               .join(" ")
               .toLowerCase()
-              .includes(recherche)
+              .includes(
+                recherche
+              )
         );
     }
 
+
     return documents;
   } catch (error) {
-    throwDocumentsError(error);
+    throwDocumentsError(
+      error
+    );
   }
 }
+
 
 export async function getDocument(
   id: string,
@@ -276,47 +591,74 @@ export async function getDocument(
     let query = supabase
       .from("documents")
       .select("*")
-      .eq("id", id);
+      .eq(
+        "id",
+        id
+      );
 
-    query = applyScope(
-      query,
-      scope
-    );
 
-    const { data, error } =
+    query =
+      applyScope(
+        query,
+        scope
+      );
+
+
+    const {
+      data,
+      error,
+    } =
       await query.single();
+
 
     if (error) {
       throw error;
     }
 
-    return data as DocumentItem;
+
+    return (
+      data as DocumentItem
+    );
   } catch (error) {
-    throwDocumentsError(error);
+    throwDocumentsError(
+      error
+    );
   }
 }
+
+
+/* =========================================================
+   CREATION
+========================================================= */
+
 
 export async function createDocument(
   input: CreateDocumentInput
 ): Promise<DocumentItem> {
   try {
     const titre =
-      normalizeText(input.titre);
+      normalizeText(
+        input.titre
+      );
+
 
     const categorie =
       normalizeText(
         input.categorie
       );
 
+
     const fichierNom =
       normalizeText(
         input.fichier_nom
       );
 
+
     const fichierUrl =
       normalizeText(
         input.fichier_url
       );
+
 
     if (!titre) {
       throw new Error(
@@ -324,11 +666,13 @@ export async function createDocument(
       );
     }
 
+
     if (!categorie) {
       throw new Error(
         "La catégorie est obligatoire."
       );
     }
+
 
     if (!fichierNom) {
       throw new Error(
@@ -336,92 +680,118 @@ export async function createDocument(
       );
     }
 
+
     if (!fichierUrl) {
       throw new Error(
         "L’URL du fichier est obligatoire."
       );
     }
 
-    if (!input.magasin_id) {
+
+    if (
+      !input.magasin_id
+    ) {
       throw new Error(
         "Le magasin est obligatoire."
       );
     }
 
-    const estDevis =
-      input.est_devis ?? false;
 
-    const payload: CreateDocumentInput =
+    const estDevis =
+      input.est_devis ??
+      false;
+
+
+    const payload:
+      CreateDocumentInput =
       {
         ...input,
 
         titre,
+
         categorie,
+
         fichier_nom:
           fichierNom,
+
         fichier_url:
           fichierUrl,
+
 
         description:
           normalizeText(
             input.description
           ) || null,
 
+
         dossier:
           normalizeText(
             input.dossier
           ) || null,
+
 
         sous_dossier:
           normalizeText(
             input.sous_dossier
           ) || null,
 
+
         auteur:
           normalizeText(
             input.auteur
           ) || null,
+
 
         secteur:
           normalizeText(
             input.secteur
           ) || null,
 
+
         prestataire:
           normalizeText(
             input.prestataire
           ) || null,
+
 
         extension:
           normalizeText(
             input.extension
           ) || null,
 
+
         date_document:
           input.date_document ||
           null,
+
 
         taille:
           normalizeNumber(
             input.taille
           ),
 
+
         version:
-          input.version ?? 1,
+          input.version ??
+          1,
+
 
         tags:
           normalizeTags(
             input.tags
           ),
 
+
         est_devis:
           estDevis,
+
 
         statut_devis:
           estDevis
             ? input.statut_devis ??
               "EN_ATTENTE"
             : null,
+
 
         montant_ht:
           estDevis
@@ -430,12 +800,14 @@ export async function createDocument(
               )
             : null,
 
+
         taux_tva:
           estDevis
             ? normalizeNumber(
                 input.taux_tva
               ) ?? 20
             : null,
+
 
         annee_budget:
           estDevis
@@ -444,11 +816,13 @@ export async function createDocument(
               )
             : null,
 
+
         devis_signe:
           estDevis
             ? input.devis_signe ??
               false
             : false,
+
 
         date_signature:
           estDevis
@@ -456,11 +830,13 @@ export async function createDocument(
               null
             : null,
 
+
         signe_par:
           estDevis
             ? input.signe_par ??
               null
             : null,
+
 
         commentaire_devis:
           estDevis
@@ -470,26 +846,46 @@ export async function createDocument(
             : null,
       };
 
-    const { data, error } =
+
+    const {
+      data,
+      error,
+    } =
       await supabase
         .from("documents")
         .insert({
           ...payload,
-          favori: false,
-          archive: false,
+
+          favori:
+            false,
+
+          archive:
+            false,
         })
         .select("*")
         .single();
+
 
     if (error) {
       throw error;
     }
 
-    return data as DocumentItem;
+
+    return (
+      data as DocumentItem
+    );
   } catch (error) {
-    throwDocumentsError(error);
+    throwDocumentsError(
+      error
+    );
   }
 }
+
+
+/* =========================================================
+   MODIFICATION
+========================================================= */
+
 
 export async function updateDocument(
   id: string,
@@ -503,6 +899,7 @@ export async function updateDocument(
         scope
       );
 
+
     if (
       input.magasin_id &&
       input.magasin_id !==
@@ -513,18 +910,23 @@ export async function updateDocument(
       );
     }
 
-    const payload: UpdateDocumentInput =
+
+    const payload:
+      UpdateDocumentInput =
       {
         ...input,
       };
 
+
     if (
-      input.titre !== undefined
+      input.titre !==
+      undefined
     ) {
       const titre =
         normalizeText(
           input.titre
         );
+
 
       if (!titre) {
         throw new Error(
@@ -532,9 +934,11 @@ export async function updateDocument(
         );
       }
 
+
       payload.titre =
         titre;
     }
+
 
     if (
       input.categorie !==
@@ -545,15 +949,18 @@ export async function updateDocument(
           input.categorie
         );
 
+
       if (!categorie) {
         throw new Error(
           "La catégorie est obligatoire."
         );
       }
 
+
       payload.categorie =
         categorie;
     }
+
 
     if (
       input.description !==
@@ -565,14 +972,17 @@ export async function updateDocument(
         ) || null;
     }
 
+
     if (
-      input.dossier !== undefined
+      input.dossier !==
+      undefined
     ) {
       payload.dossier =
         normalizeText(
           input.dossier
         ) || null;
     }
+
 
     if (
       input.sous_dossier !==
@@ -584,8 +994,10 @@ export async function updateDocument(
         ) || null;
     }
 
+
     if (
-      input.auteur !== undefined
+      input.auteur !==
+      undefined
     ) {
       payload.auteur =
         normalizeText(
@@ -593,14 +1005,17 @@ export async function updateDocument(
         ) || null;
     }
 
+
     if (
-      input.secteur !== undefined
+      input.secteur !==
+      undefined
     ) {
       payload.secteur =
         normalizeText(
           input.secteur
         ) || null;
     }
+
 
     if (
       input.prestataire !==
@@ -612,6 +1027,7 @@ export async function updateDocument(
         ) || null;
     }
 
+
     if (
       input.extension !==
       undefined
@@ -622,14 +1038,17 @@ export async function updateDocument(
         ) || null;
     }
 
+
     if (
-      input.tags !== undefined
+      input.tags !==
+      undefined
     ) {
       payload.tags =
         normalizeTags(
           input.tags
         );
     }
+
 
     if (
       input.montant_ht !==
@@ -641,6 +1060,7 @@ export async function updateDocument(
         );
     }
 
+
     if (
       input.taux_tva !==
       undefined
@@ -650,6 +1070,7 @@ export async function updateDocument(
           input.taux_tva
         );
     }
+
 
     if (
       input.annee_budget !==
@@ -661,6 +1082,7 @@ export async function updateDocument(
         );
     }
 
+
     if (
       input.commentaire_devis !==
       undefined
@@ -671,30 +1093,54 @@ export async function updateDocument(
         ) || null;
     }
 
+
     let query = supabase
       .from("documents")
-      .update(payload)
-      .eq("id", id);
+      .update(
+        payload
+      )
+      .eq(
+        "id",
+        id
+      );
 
-    query = applyScope(
-      query,
-      scope
-    );
 
-    const { data, error } =
+    query =
+      applyScope(
+        query,
+        scope
+      );
+
+
+    const {
+      data,
+      error,
+    } =
       await query
         .select("*")
         .single();
+
 
     if (error) {
       throw error;
     }
 
-    return data as DocumentItem;
+
+    return (
+      data as DocumentItem
+    );
   } catch (error) {
-    throwDocumentsError(error);
+    throwDocumentsError(
+      error
+    );
   }
 }
+
+
+/* =========================================================
+   DEVIS
+========================================================= */
+
 
 export async function updateDevisStatus(
   id: string,
@@ -705,14 +1151,19 @@ export async function updateDevisStatus(
   return updateDocument(
     id,
     {
-      est_devis: true,
-      statut_devis: statut,
+      est_devis:
+        true,
+
+      statut_devis:
+        statut,
+
       commentaire_devis:
         commentaire,
     },
     scope
   );
 }
+
 
 export async function updateDevisSignature(
   id: string,
@@ -723,12 +1174,17 @@ export async function updateDevisSignature(
   return updateDocument(
     id,
     {
-      est_devis: true,
-      devis_signe: signe,
+      est_devis:
+        true,
+
+      devis_signe:
+        signe,
+
       date_signature:
         signe
           ? new Date().toISOString()
           : null,
+
       signe_par:
         signe
           ? userId
@@ -738,31 +1194,43 @@ export async function updateDevisSignature(
   );
 }
 
+
 export async function getDevis(
   scope: DocumentScope,
-  anneeBudget?: number | null
+  anneeBudget?:
+    number | null
 ): Promise<DocumentItem[]> {
   return getDocuments({
     magasinId:
       scope.magasinId,
+
     tousMagasins:
       scope.tousMagasins,
-    archives: false,
-    estDevis: true,
+
+    archives:
+      false,
+
+    estDevis:
+      true,
+
     anneeBudget:
-      anneeBudget ?? null,
+      anneeBudget ??
+      null,
   });
 }
 
+
 export async function getDevisStats(
   scope: DocumentScope,
-  anneeBudget?: number | null
+  anneeBudget?:
+    number | null
 ): Promise<DevisStats> {
   const devis =
     await getDevis(
       scope,
       anneeBudget
     );
+
 
   const montant = (
     statut: StatutDevis
@@ -774,7 +1242,10 @@ export async function getDevisStats(
           statut
       )
       .reduce(
-        (total, item) =>
+        (
+          total,
+          item
+        ) =>
           total +
           Number(
             item.montant_ht ??
@@ -783,6 +1254,7 @@ export async function getDevisStats(
         0
       );
 
+
   const valides =
     devis.filter(
       (item) =>
@@ -790,8 +1262,11 @@ export async function getDevisStats(
         "VALIDE"
     );
 
+
   return {
-    total: devis.length,
+    total:
+      devis.length,
+
 
     enAttente:
       devis.filter(
@@ -800,8 +1275,10 @@ export async function getDevisStats(
           "EN_ATTENTE"
       ).length,
 
+
     valides:
       valides.length,
+
 
     rejetes:
       devis.filter(
@@ -810,6 +1287,7 @@ export async function getDevisStats(
           "REJETE"
       ).length,
 
+
     investissementNPlus1:
       devis.filter(
         (item) =>
@@ -817,11 +1295,13 @@ export async function getDevisStats(
           "INVESTISSEMENT_N_PLUS_1"
       ).length,
 
+
     signes:
       valides.filter(
         (item) =>
           item.devis_signe
       ).length,
+
 
     nonSignes:
       valides.filter(
@@ -829,16 +1309,24 @@ export async function getDevisStats(
           !item.devis_signe
       ).length,
 
+
     montantEnAttenteHt:
       montant(
         "EN_ATTENTE"
       ),
 
+
     montantValideHt:
-      montant("VALIDE"),
+      montant(
+        "VALIDE"
+      ),
+
 
     montantRejeteHt:
-      montant("REJETE"),
+      montant(
+        "REJETE"
+      ),
+
 
     montantNPlus1Ht:
       montant(
@@ -846,6 +1334,12 @@ export async function getDevisStats(
       ),
   };
 }
+
+
+/* =========================================================
+   ARCHIVAGE
+========================================================= */
+
 
 export async function deleteDocument(
   id: string,
@@ -855,25 +1349,147 @@ export async function deleteDocument(
     let query = supabase
       .from("documents")
       .update({
-        archive: true,
+        archive:
+          true,
       })
-      .eq("id", id);
+      .eq(
+        "id",
+        id
+      );
 
-    query = applyScope(
-      query,
-      scope
-    );
 
-    const { error } =
-      await query;
+    query =
+      applyScope(
+        query,
+        scope
+      );
+
+
+    const {
+      error,
+    } = await query;
+
 
     if (error) {
       throw error;
     }
   } catch (error) {
-    throwDocumentsError(error);
+    throwDocumentsError(
+      error
+    );
   }
 }
+
+
+/* =========================================================
+   SUPPRESSION DEFINITIVE
+========================================================= */
+
+
+export async function deleteDocumentPermanently(
+  id: string,
+  scope: DocumentScope
+): Promise<void> {
+  try {
+    /*
+     * On récupère d'abord le document
+     * avant de supprimer sa ligne.
+     */
+    const document =
+      await getDocument(
+        id,
+        scope
+      );
+
+
+    const storageLocation =
+      getDocumentStorageLocation(
+        document
+      );
+
+
+    /*
+     * Suppression du fichier Storage
+     * quand son emplacement peut
+     * être déterminé.
+     */
+    if (
+      storageLocation
+    ) {
+      const {
+        error:
+          storageError,
+      } =
+        await supabase
+          .storage
+          .from(
+            storageLocation.bucket
+          )
+          .remove([
+            storageLocation.path,
+          ]);
+
+
+      /*
+       * On ne bloque pas la suppression
+       * de la fiche uniquement parce
+       * que le fichier physique est
+       * déjà absent.
+       *
+       * On affiche néanmoins
+       * l'information dans la console.
+       */
+      if (
+        storageError
+      ) {
+        console.warn(
+          "Suppression du fichier Storage impossible :",
+          storageError
+        );
+      }
+    }
+
+
+    /*
+     * Suppression définitive
+     * de la ligne documents.
+     */
+    let query = supabase
+      .from("documents")
+      .delete()
+      .eq(
+        "id",
+        id
+      );
+
+
+    query =
+      applyScope(
+        query,
+        scope
+      );
+
+
+    const {
+      error,
+    } = await query;
+
+
+    if (error) {
+      throw error;
+    }
+  } catch (error) {
+    throwDocumentsError(
+      error
+    );
+  }
+}
+
+
+/* =========================================================
+   RESTAURATION
+========================================================= */
+
 
 export async function restoreDocument(
   id: string,
@@ -883,25 +1499,42 @@ export async function restoreDocument(
     let query = supabase
       .from("documents")
       .update({
-        archive: false,
+        archive:
+          false,
       })
-      .eq("id", id);
+      .eq(
+        "id",
+        id
+      );
 
-    query = applyScope(
-      query,
-      scope
-    );
 
-    const { error } =
-      await query;
+    query =
+      applyScope(
+        query,
+        scope
+      );
+
+
+    const {
+      error,
+    } = await query;
+
 
     if (error) {
       throw error;
     }
   } catch (error) {
-    throwDocumentsError(error);
+    throwDocumentsError(
+      error
+    );
   }
 }
+
+
+/* =========================================================
+   FAVORIS
+========================================================= */
+
 
 export async function toggleDocumentFavorite(
   id: string,
@@ -914,23 +1547,39 @@ export async function toggleDocumentFavorite(
       .update({
         favori,
       })
-      .eq("id", id);
+      .eq(
+        "id",
+        id
+      );
 
-    query = applyScope(
-      query,
-      scope
-    );
 
-    const { error } =
-      await query;
+    query =
+      applyScope(
+        query,
+        scope
+      );
+
+
+    const {
+      error,
+    } = await query;
+
 
     if (error) {
       throw error;
     }
   } catch (error) {
-    throwDocumentsError(error);
+    throwDocumentsError(
+      error
+    );
   }
 }
+
+
+/* =========================================================
+   STATISTIQUES
+========================================================= */
+
 
 export async function getDocumentStats(
   scope: DocumentScope
@@ -940,23 +1589,32 @@ export async function getDocumentStats(
       await getDocuments({
         magasinId:
           scope.magasinId,
+
         tousMagasins:
           scope.tousMagasins,
-        archives: false,
+
+        archives:
+          false,
       });
+
 
     const archives =
       await getDocuments({
         magasinId:
           scope.magasinId,
+
         tousMagasins:
           scope.tousMagasins,
-        archives: true,
+
+        archives:
+          true,
       });
+
 
     return {
       total:
         documents.length,
+
 
       favoris:
         documents.filter(
@@ -964,8 +1622,10 @@ export async function getDocumentStats(
             document.favori
         ).length,
 
+
       archives:
         archives.length,
+
 
       avecSousDossier:
         documents.filter(
@@ -976,46 +1636,76 @@ export async function getDocumentStats(
         ).length,
     };
   } catch (error) {
-    throwDocumentsError(error);
+    throwDocumentsError(
+      error
+    );
   }
 }
 
+
+/* =========================================================
+   DOSSIERS
+========================================================= */
+
+
 export async function getDocumentFolders(
   scope: DocumentScope
-): Promise<DocumentFolderNode[]> {
+): Promise<
+  DocumentFolderNode[]
+> {
   try {
     const documents =
       await getDocuments({
         magasinId:
           scope.magasinId,
+
         tousMagasins:
           scope.tousMagasins,
-        archives: false,
+
+        archives:
+          false,
       });
+
 
     const map =
       new Map<
         string,
         {
-          sousDossiers: Set<string>;
-          total: number;
+          sousDossiers:
+            Set<string>;
+
+          total:
+            number;
         }
       >();
 
-    for (const document of documents) {
+
+    for (
+      const document
+      of documents
+    ) {
       const dossier =
         normalizeText(
           document.dossier
-        ) || "Sans dossier";
+        ) ||
+        "Sans dossier";
+
 
       const current =
-        map.get(dossier) ?? {
+        map.get(
+          dossier
+        ) ?? {
           sousDossiers:
             new Set<string>(),
-          total: 0,
+
+          total:
+            0,
         };
 
-      current.total += 1;
+
+      current.total +=
+        1;
+
 
       if (
         document.sous_dossier?.trim()
@@ -1025,11 +1715,13 @@ export async function getDocumentFolders(
         );
       }
 
+
       map.set(
         dossier,
         current
       );
     }
+
 
     return Array.from(
       map.entries()
@@ -1040,29 +1732,47 @@ export async function getDocumentFolders(
           value,
         ]) => ({
           dossier,
+
           sousDossiers:
             Array.from(
               value.sousDossiers
-            ).sort((a, b) =>
-              a.localeCompare(
-                b,
-                "fr"
-              )
+            ).sort(
+              (
+                a,
+                b
+              ) =>
+                a.localeCompare(
+                  b,
+                  "fr"
+                )
             ),
+
           total:
             value.total,
         })
       )
-      .sort((a, b) =>
-        a.dossier.localeCompare(
-          b.dossier,
-          "fr"
-        )
+      .sort(
+        (
+          a,
+          b
+        ) =>
+          a.dossier.localeCompare(
+            b.dossier,
+            "fr"
+          )
       );
   } catch (error) {
-    throwDocumentsError(error);
+    throwDocumentsError(
+      error
+    );
   }
 }
+
+
+/* =========================================================
+   CATEGORIES
+========================================================= */
+
 
 export async function getDocumentCategories(
   scope: DocumentScope
@@ -1072,26 +1782,39 @@ export async function getDocumentCategories(
       await getDocuments({
         magasinId:
           scope.magasinId,
+
         tousMagasins:
           scope.tousMagasins,
-        archives: false,
+
+        archives:
+          false,
       });
+
 
     return Array.from(
       new Set(
         documents
-          .map((document) =>
-            document.categorie.trim()
+          .map(
+            (document) =>
+              document.categorie.trim()
           )
-          .filter(Boolean)
+          .filter(
+            Boolean
+          )
       )
-    ).sort((a, b) =>
-      a.localeCompare(
-        b,
-        "fr"
-      )
+    ).sort(
+      (
+        a,
+        b
+      ) =>
+        a.localeCompare(
+          b,
+          "fr"
+        )
     );
   } catch (error) {
-    throwDocumentsError(error);
+    throwDocumentsError(
+      error
+    );
   }
 }

@@ -77,7 +77,7 @@ function SearchContent({
           ].join(" ")}
           placeholder={
             mobile
-              ? "Rechercher dans CastoManager..."
+              ? "Rechercher dans SécuManager..."
               : "Rechercher une consigne, un document, une intervention..."
           }
           value={recherche}
@@ -307,7 +307,7 @@ export default function Header({
 
             <div className="min-w-0">
               <p className="truncate text-sm font-bold text-gray-900 dark:text-white sm:text-base">
-                CastoManager
+                SécuManager
               </p>
 
               <p className="hidden truncate text-xs text-gray-500 dark:text-slate-400 sm:block">

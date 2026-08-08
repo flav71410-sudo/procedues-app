@@ -4,8 +4,9 @@ import "./globals.css";
 import Providers from "@/components/Providers";
 
 export const metadata: Metadata = {
-  title: "CastoManager",
-  description: "Application de gestion Castorama Claye-Souilly",
+  title: "SécuManager",
+  description:
+    "Plateforme de gestion de la sécurité incendie, de la maintenance des équipements et du suivi réglementaire.",
 };
 
 export default function RootLayout({

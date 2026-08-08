@@ -223,14 +223,14 @@ const administration = estCollaborateur
       <div className="flex shrink-0 items-start justify-between gap-4 px-5 pb-4 pt-5 lg:px-6 lg:pt-6">
         <div className="min-w-0">
           <img
-            src="/logo.png"
-            alt="Castorama"
-            className="mb-4 h-auto w-44 max-w-full rounded-lg object-contain lg:w-48"
-          />
+  src="/secumanager-logo.png"
+  alt="SécuManager"
+  className="mb-4 h-auto w-52 max-w-full rounded-xl object-contain lg:w-56"
+/>
 
-          <h1 className="truncate text-xl font-bold leading-tight">
-            CastoManager
-          </h1>
+<h1 className="truncate text-xl font-bold leading-tight">
+  SécuManager
+</h1>
 
           <p className="mt-1 truncate text-sm text-blue-100">
             {magasin?.nom ??

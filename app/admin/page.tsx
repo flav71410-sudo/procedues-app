@@ -610,7 +610,7 @@ export default function UtilisateursPage() {
       title: "Supprimer cet utilisateur ?",
       itemName: nomUtilisateur,
       description:
-        "Le compte sera définitivement supprimé de CastoManager et de Supabase Auth. Cette action est irréversible.",
+        "Le compte sera définitivement supprimé de SécuManager et de Supabase Auth. Cette action est irréversible.",
     });
 
     if (!confirmation) return;

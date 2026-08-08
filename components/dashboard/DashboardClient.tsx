@@ -240,7 +240,7 @@ export default function DashboardClient() {
             </p>
 
             <p className="mt-3 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
-              Tant que votre compte reste désactivé, les modules de CastoManager
+              Tant que votre compte reste désactivé, les modules de SécuManager
               restent inaccessibles.
             </p>
           </div>
@@ -257,7 +257,7 @@ export default function DashboardClient() {
             </p>
 
             <h2 className="mt-2 text-2xl font-black text-slate-900 dark:text-white">
-              Bienvenue {profil?.prenom?.trim() || "dans CastoManager"}
+              Bienvenue {profil?.prenom?.trim() || "dans SécuManager"}
             </h2>
 
             <p className="mt-4 max-w-2xl text-base leading-7 text-slate-700 dark:text-slate-300">
@@ -267,7 +267,7 @@ export default function DashboardClient() {
 
             <p className="mt-3 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
               Tant qu’un rôle métier ne vous a pas été attribué, les modules de
-              CastoManager restent inaccessibles.
+              SécuManager restent inaccessibles.
             </p>
           </div>
         </section>
@@ -381,39 +381,39 @@ export default function DashboardClient() {
         </div>
       )}
 
-      <HealthScoreCard
-        healthScore={
-          dashboardData?.healthScore ?? null
-        }
-        loading={loading || chargementAuth}
-      />
-
-      <SupervisionCenter
-        supervision={
-          dashboardData?.supervision ?? null
-        }
-        loading={loading || chargementAuth}
-      />
-
       <StatsCards
-        stats={dashboardData?.stats ?? null}
-        loading={loading || chargementAuth}
-      />
+  stats={dashboardData?.stats ?? null}
+  loading={loading || chargementAuth}
+/>
 
-      <AlertsPanel
-        alertes={dashboardData?.alertes ?? []}
-        loading={loading || chargementAuth}
-      />
+<AlertsPanel
+  alertes={dashboardData?.alertes ?? []}
+  loading={loading || chargementAuth}
+/>
 
-      <EquipmentCharts
-        equipementsParType={
-          dashboardData?.equipementsParType ?? []
-        }
-        equipementsParEtat={
-          dashboardData?.equipementsParEtat ?? []
-        }
-        loading={loading || chargementAuth}
-      />
+<HealthScoreCard
+  healthScore={
+    dashboardData?.healthScore ?? null
+  }
+  loading={loading || chargementAuth}
+/>
+
+<SupervisionCenter
+  supervision={
+    dashboardData?.supervision ?? null
+  }
+  loading={loading || chargementAuth}
+/>
+
+<EquipmentCharts
+  equipementsParType={
+    dashboardData?.equipementsParType ?? []
+  }
+  equipementsParEtat={
+    dashboardData?.equipementsParEtat ?? []
+  }
+  loading={loading || chargementAuth}
+/>
 
       {/*
        * ActivityTimeline et TodayPanel ont été retirés temporairement :

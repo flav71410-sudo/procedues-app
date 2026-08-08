@@ -669,8 +669,8 @@ if (!data || data.length === 0) {
         <div className="equipements-print-only mb-6 border-b-2 border-slate-900 pb-4 text-slate-900">
           <div className="flex items-end justify-between gap-6">
             <div>
-              <p className="text-xl font-black">CASTORAMA</p>
-              <p className="text-sm font-bold">CastoManager</p>
+              <p className="text-xl font-black">SécuManager</p>
+              <p className="text-sm font-bold">SécuManager</p>
             </div>
 
             <div className="text-right">

@@ -556,7 +556,7 @@ export default function NotificationCenter() {
                 </p>
 
                 <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">
-                  Les alertes de CastoManager apparaîtront ici.
+                  Les alertes de SécuManager apparaîtront ici.
                 </p>
               </div>
             ) : (

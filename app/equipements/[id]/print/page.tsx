@@ -15,6 +15,7 @@ import {
 
 import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/providers/AuthProvider";
+import PrintHeader from "@/components/print/PrintHeader";
 
 type Equipement = {
   id: string;
@@ -407,46 +408,14 @@ export default function EquipementPrintPage() {
       </div>
 
       <article className="print-card mx-auto max-w-[210mm] bg-white p-8 shadow-xl">
-        <header className="border-b-4 border-blue-600 pb-5">
-          <div className="flex items-start justify-between gap-8">
-            <div>
-              <p className="text-2xl font-black tracking-tight text-blue-700">
-                CASTORAMA
-              </p>
-              <p className="mt-1 text-sm font-bold uppercase tracking-[0.18em] text-slate-500">
-                CastoManager
-              </p>
-            </div>
-
-            <div className="text-right">
-              <h1 className="text-2xl font-black text-slate-900">
-                Fiche équipement
-              </h1>
-              <p className="mt-1 font-mono text-sm font-bold text-blue-700">
-                {equipement.numero}
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-5 grid grid-cols-2 gap-x-8 gap-y-1 text-xs text-slate-600">
-            <p>
-              <strong>Magasin :</strong>{" "}
-              {magasinNom}
-            </p>
-            <p className="text-right">
-              <strong>Imprimé le :</strong>{" "}
-              {formatDateHeure(dateImpression)}
-            </p>
-            <p>
-              <strong>Imprimé par :</strong>{" "}
-              {nomUtilisateur}
-            </p>
-            <p className="text-right">
-              <strong>Rôle :</strong>{" "}
-              {roleUtilisateur}
-            </p>
-          </div>
-        </header>
+        <PrintHeader
+  title="Fiche équipement"
+  reference={equipement.numero}
+  magasin={magasinNom}
+  dateImpression={formatDateHeure(dateImpression)}
+  imprimePar={nomUtilisateur}
+  role={roleUtilisateur}
+/>
 
         <section className="avoid-break mt-6">
           <h2 className="mb-3 border-b border-slate-300 pb-2 text-base font-black uppercase tracking-wide text-slate-800">
@@ -652,7 +621,7 @@ export default function EquipementPrintPage() {
         </section>
 
         <footer className="mt-8 border-t border-slate-300 pt-4 text-center text-[10px] text-slate-500">
-          Document généré automatiquement par CastoManager · {magasinNom} ·{" "}
+          Document généré automatiquement par SécuManager · {magasinNom} ·{" "}
           {formatDateHeure(dateImpression)}
         </footer>
       </article>

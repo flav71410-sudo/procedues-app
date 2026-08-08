@@ -17,11 +17,11 @@ type QuickAction = {
 export default function QuickActions() {
   const actions: QuickAction[] = [
     {
-      title: "Ajouter un équipement",
-      description: "Créer une nouvelle fiche équipement.",
-      href: "/equipements/ajouter",
-      icon: <PackagePlus size={22} />,
-    },
+  title: "Ajouter un équipement",
+  description: "Créer une nouvelle fiche équipement.",
+  href: "/equipements/nouveau",
+  icon: <PackagePlus size={22} />,
+},
     {
       title: "Ouvrir les plans",
       description: "Accéder à la cartographie interactive.",
@@ -34,12 +34,12 @@ export default function QuickActions() {
       href: "/planning",
       icon: <CalendarPlus size={22} />,
     },
-    {
-      title: "Ajouter un document",
-      description: "Déposer un rapport ou une attestation.",
-      href: "/document",
-      icon: <FilePlus2 size={22} />,
-    },
+   {
+  title: "Ajouter un document",
+  description: "Déposer un rapport ou une attestation.",
+  href: "/documents/nouveau",
+  icon: <FilePlus2 size={22} />,
+},
     {
       title: "Scanner un QR Code",
       description: "Accéder rapidement à un équipement.",

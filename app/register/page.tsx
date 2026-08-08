@@ -14,8 +14,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import { ajouterJournal } from "@/services/journal";
 
-const allowedDomain =
-  process.env.NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN || "@castorama.fr";
+
 
 type Magasin = {
   id: string;
@@ -120,10 +119,7 @@ export default function RegisterPage() {
       return;
     }
 
-    if (!cleanEmail.endsWith(allowedDomain)) {
-      setError(`Seules les adresses ${allowedDomain} sont autorisées.`);
-      return;
-    }
+   
 
     if (password.length < 6) {
       setError("Le mot de passe doit contenir au moins 6 caractères.");
@@ -229,8 +225,8 @@ window.location.href = "/?inscription=ok";
       <div className="w-full max-w-lg rounded-3xl bg-white p-8 shadow-2xl">
         <div className="mb-6 flex justify-center">
           <img
-            src="/logo.png"
-            alt="Logo Castorama"
+            src="/secumanager-logo.png"
+            alt="Logo SécuManager"
             className="w-64 rounded-xl"
           />
         </div>
@@ -245,8 +241,8 @@ window.location.href = "/?inscription=ok";
           </h1>
 
           <p className="mt-2 text-gray-600">
-            Accès réservé aux adresses {allowedDomain}
-          </p>
+  Créez votre compte SécuManager
+</p>
         </div>
 
         <form onSubmit={handleRegister} className="mt-8 space-y-4">
@@ -269,13 +265,13 @@ window.location.href = "/?inscription=ok";
           </div>
 
           <ChampTexte
-            label="Adresse email"
-            type="email"
-            value={email}
-            onChange={setEmail}
-            placeholder={`prenom.nom${allowedDomain}`}
-            autoComplete="email"
-          />
+  label="Adresse email"
+  type="email"
+  value={email}
+  onChange={setEmail}
+  placeholder="votre@email.fr"
+  autoComplete="email"
+/>
 
           <ChampTexte
             label="Mot de passe"
@@ -327,7 +323,7 @@ window.location.href = "/?inscription=ok";
                   setCleActivation(event.target.value.toUpperCase())
                 }
                 disabled={loading}
-                placeholder="CASTO-XXXX-XXXX-XXXX"
+                placeholder="XXXX-XXXX-XXXX-XXXX"
                 autoComplete="off"
                 spellCheck={false}
                 className="w-full rounded-xl border border-amber-300 bg-white px-4 py-3 font-mono uppercase tracking-wide text-gray-900 outline-none transition placeholder:font-sans placeholder:normal-case placeholder:tracking-normal placeholder:text-gray-400 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 disabled:cursor-not-allowed disabled:bg-gray-100"

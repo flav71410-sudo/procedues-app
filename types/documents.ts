@@ -10,6 +10,8 @@ export interface DocumentItem {
   titre: string;
   description: string | null;
 
+   fichier_path?: string | null;
+
   categorie: string;
 
   dossier: string | null;

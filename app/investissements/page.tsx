@@ -199,7 +199,7 @@ function budgetStorageKey(
   magasinId: string | null,
   year: number
 ): string {
-  return `castomanager-budget-investissements:${
+  return `Sécumanager-budget-investissements:${
     magasinId ?? "tous"
   }:${year}`;
 }

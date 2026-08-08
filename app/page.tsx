@@ -80,18 +80,18 @@ window.location.href =
       <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-md">
         <div className="flex justify-center mb-6">
           <img
-            src="/logo.png"
-            alt="Logo Castorama"
+            src="/secumanager-logo.png"
+            alt="Logo SécuManager"
             className="mx-auto mb-6 w-64 rounded-xl"
           />
         </div>
 
         <h1 className="text-2xl font-bold text-center text-gray-900">
-          Consignes Permanentes
+          SécuManager
         </h1>
 
         <p className="text-center text-gray-600 mt-2">
-          Castorama Claye-Souilly
+          votre logiciel de gestion de sécurité et de maintenance 
         </p>
 
         <div className="mt-8 space-y-4">
