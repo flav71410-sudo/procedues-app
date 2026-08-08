@@ -41,7 +41,11 @@ export type Permission =
   | "settings.view"
   | "settings.manage"
   | "admin.access"
-  | "system.journal.view";
+  | "system.journal.view"
+  | "investissements.view"
+  | "investissements.create"
+  | "investissements.edit"
+  | "investissements.delete";
 
 const ALL_PERMISSIONS: Permission[] = [
   "dashboard.view",
@@ -80,6 +84,10 @@ const ALL_PERMISSIONS: Permission[] = [
   "settings.manage",
   "admin.access",
   "system.journal.view",
+  "investissements.view",
+  "investissements.create",
+  "investissements.edit",
+  "investissements.delete",
 ];
 
 export const ROLE_PERMISSIONS: Record<AppRole, readonly Permission[]> = {
@@ -118,6 +126,10 @@ export const ROLE_PERMISSIONS: Record<AppRole, readonly Permission[]> = {
     "settings.view",
     "settings.manage",
     "admin.access",
+    "investissements.view",
+    "investissements.create",
+    "investissements.edit",
+    "investissements.delete",
   ],
 
   DM: [
@@ -142,18 +154,22 @@ export const ROLE_PERMISSIONS: Record<AppRole, readonly Permission[]> = {
     "journal.create",
     "journal.edit",
     "prestataires.view",
+    "investissements.view",
+    "investissements.create",
+    "investissements.edit",
+    "investissements.delete",
   ],
 
   PERMANENT: [
-  "dashboard.view",
-  "consignes.view",
-  "planning.view",
-  "maintenance.view",
-  "equipements.view",
-  "documents.view",
-  "plans.view",
-  "journal.view",
-],
+    "dashboard.view",
+    "consignes.view",
+    "planning.view",
+    "maintenance.view",
+    "equipements.view",
+    "documents.view",
+    "plans.view",
+    "journal.view",
+  ],
 
   /*
    * Rôle attribué automatiquement à l'inscription.
