@@ -32,7 +32,7 @@ export default function EquipmentQRCode({
    * grâce à son ID.
    */
   const SITE_URL =
-    "https://procedues-app-vphu-4iecwbcjz-appli-casto-perm.vercel.app";
+  "https://secumanager.vercel.app";
 
   const url =
     `${SITE_URL}/equipements/${id}`;
