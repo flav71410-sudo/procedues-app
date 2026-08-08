@@ -25,6 +25,39 @@ function appliquerScope<T>(
   );
 }
 
+
+async function signerImagePlan(
+  plan: Plan
+): Promise<Plan> {
+  if (!plan.image_path) {
+    return {
+      ...plan,
+      image_url: "",
+    };
+  }
+
+  const { data, error } = await supabase.storage
+    .from("plans")
+    .createSignedUrl(plan.image_path, 3600);
+
+  if (error || !data?.signedUrl) {
+    console.error(
+      `Impossible de générer l'URL signée du plan ${plan.id} :`,
+      error
+    );
+
+    return {
+      ...plan,
+      image_url: "",
+    };
+  }
+
+  return {
+    ...plan,
+    image_url: data.signedUrl,
+  };
+}
+
 export async function getPlans(
   scope: PlanScope
 ): Promise<Plan[]> {
@@ -40,7 +73,9 @@ export async function getPlans(
 
   if (error) throw error;
 
-  return (data ?? []) as Plan[];
+  return Promise.all(
+    ((data ?? []) as Plan[]).map(signerImagePlan)
+  );
 }
 
 export async function getPlan(
@@ -59,7 +94,7 @@ export async function getPlan(
 
   if (error) throw error;
 
-  return data as Plan;
+  return signerImagePlan(data as Plan);
 }
 
 export async function createPlan(
@@ -74,7 +109,7 @@ export async function createPlan(
 
   if (error) throw error;
 
-  return data as Plan;
+  return signerImagePlan(data as Plan);
 }
 
 export async function updatePlan(
@@ -95,7 +130,7 @@ export async function updatePlan(
 
   if (error) throw error;
 
-  return data as Plan;
+  return signerImagePlan(data as Plan);
 }
 
 export async function deletePlan(

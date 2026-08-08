@@ -18,6 +18,7 @@ import {
 import AppShell from "@/components/AppShell";
 import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/providers/AuthProvider";
+import { useDialog } from "@/providers/DialogProvider";
 
 type Magasin = {
   id: string;
@@ -33,6 +34,7 @@ function normaliser(value: string): string {
 }
 
 export default function MagasinsPage() {
+  const dialog = useDialog();
   const { can, magasin: magasinUtilisateur, role } = useAuth();
 
   const canView = can("stores.view");
@@ -247,9 +249,12 @@ export default function MagasinsPage() {
       return;
     }
 
-    const confirmation = window.confirm(
-      `Supprimer définitivement le magasin « ${magasin.nom} » ?\n\nCette action peut échouer si des utilisateurs ou des données sont encore rattachés à ce magasin.`
-    );
+    const confirmation = await dialog.delete({
+      title: "Supprimer ce magasin ?",
+      itemName: magasin.nom,
+      description:
+        "Cette suppression est définitive. Elle peut être refusée si des utilisateurs, équipements, documents, plans ou autres données sont encore rattachés à ce magasin.",
+    });
 
     if (!confirmation) return;
 

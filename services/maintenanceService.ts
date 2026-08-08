@@ -775,6 +775,77 @@ export async function updateMaintenance(
     );
   }
 
+  // Synchronisation automatique Maintenance -> Planning
+  const planningPayload: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+  };
+
+  // Synchroniser la date / heure si elles ont été modifiées.
+  if ("date_debut" in donnees && donnees.date_debut) {
+    const date = new Date(donnees.date_debut);
+
+    if (!Number.isNaN(date.getTime())) {
+      planningPayload.date_evenement = donnees.date_debut.slice(0, 10);
+      planningPayload.heure_debut =
+        donnees.date_debut.length >= 16
+          ? donnees.date_debut.slice(11, 16)
+          : null;
+    }
+  }
+
+  // Synchroniser le statut de la maintenance avec le planning.
+  // On récupère le référentiel correspondant au statut_id afin de ne pas
+  // dépendre d'un UUID spécifique.
+  if ("statut_id" in donnees && donnees.statut_id) {
+    const { data: statutReferentiel, error: statutError } = await supabase
+      .from("referentiels")
+      .select("*")
+      .eq("id", donnees.statut_id)
+      .single();
+
+    if (statutError) {
+      throw new Error(
+        `Maintenance modifiée, mais impossible de lire son statut pour synchroniser le planning : ${statutError.message}`
+      );
+    }
+
+    const statutLigne =
+      (statutReferentiel ?? {}) as Record<string, unknown>;
+
+    const statutTexte = nettoyerCategorie(
+      normaliserTexte(statutLigne.code) ??
+        obtenirLabel(statutLigne, "")
+    );
+
+    const estTerminee =
+      statutTexte === "termine" ||
+      statutTexte === "terminee" ||
+      statutTexte.includes("termine") ||
+      statutTexte.includes("terminee") ||
+      statutTexte === "cloture" ||
+      statutTexte === "cloturee" ||
+      statutTexte.includes("clotur");
+
+    if (estTerminee) {
+      planningPayload.statut = "termine";
+    }
+  }
+
+  // On ne lance la mise à jour que si autre chose que updated_at
+  // doit réellement être synchronisé.
+  if (Object.keys(planningPayload).length > 1) {
+    const { error: planningError } = await supabase
+      .from("planning_evenements")
+      .update(planningPayload)
+      .eq("maintenance_id", id);
+
+    if (planningError) {
+      throw new Error(
+        `Maintenance modifiée, mais impossible de synchroniser le planning : ${planningError.message}`
+      );
+    }
+  }
+
   return data as Maintenance;
 }
 

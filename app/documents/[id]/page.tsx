@@ -1,6 +1,8 @@
 "use client";
 
 import {
+  ChangeEvent,
+  FormEvent,
   useCallback,
   useEffect,
   useMemo,
@@ -24,14 +26,18 @@ import {
   Image as ImageIcon,
   Loader2,
   Maximize2,
+  Pencil,
   RefreshCw,
   Save,
   Star,
   TrendingUp,
+  Upload,
+  X,
 } from "lucide-react";
 
 import AppShell from "@/components/AppShell";
 import { useAuth } from "@/providers/AuthProvider";
+import { supabase } from "@/lib/supabase";
 
 import {
   getDocument,
@@ -362,6 +368,29 @@ function iconeDocument(
   );
 }
 
+
+function nettoyerNomFichier(
+  nom: string
+): string {
+  return nom
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]/g, "-")
+    .replace(/-+/g, "-");
+}
+
+type EditionDocumentForm = {
+  titre: string;
+  description: string;
+  categorie: string;
+  dossier: string;
+  sous_dossier: string;
+  secteur: string;
+  prestataire: string;
+  date_document: string;
+  tags: string;
+};
+
 /* =========================================================
    PAGE
 ========================================================= */
@@ -380,6 +409,7 @@ export default function DocumentDetailPage() {
 
   const {
     user,
+    profil,
     can,
     magasinActif,
     vueTousMagasins,
@@ -450,6 +480,14 @@ export default function DocumentDetailPage() {
     );
 
   const [
+    signedUrl,
+    setSignedUrl,
+  ] =
+    useState<string | null>(
+      null
+    );
+
+  const [
     viewerLoaded,
     setViewerLoaded,
   ] =
@@ -460,6 +498,42 @@ export default function DocumentDetailPage() {
     setImageFullscreen,
   ] =
     useState(false);
+
+  const [
+    editionOuverte,
+    setEditionOuverte,
+  ] =
+    useState(false);
+
+  const [
+    editionBusy,
+    setEditionBusy,
+  ] =
+    useState(false);
+
+  const [
+    fichierRemplacement,
+    setFichierRemplacement,
+  ] =
+    useState<File | null>(
+      null
+    );
+
+  const [
+    formEdition,
+    setFormEdition,
+  ] =
+    useState<EditionDocumentForm>({
+      titre: "",
+      description: "",
+      categorie: "",
+      dossier: "",
+      sous_dossier: "",
+      secteur: "",
+      prestataire: "",
+      date_document: "",
+      tags: "",
+    });
 
   const scope =
     useMemo<DocumentScope>(
@@ -519,12 +593,51 @@ export default function DocumentDetailPage() {
 
           setError(null);
           setViewerLoaded(false);
+          setSignedUrl(null);
 
           const data =
             await getDocument(
               documentId,
               scope
             );
+
+          const fichierPath =
+            (
+              data as DocumentItem & {
+                fichier_path?: string | null;
+              }
+            ).fichier_path;
+
+          if (!fichierPath) {
+            throw new Error(
+              "Le chemin privé du fichier est introuvable. Réimporte ce document."
+            );
+          }
+
+          const {
+            data: signedData,
+            error: signedError,
+          } =
+            await supabase.storage
+              .from("documents")
+              .createSignedUrl(
+                fichierPath,
+                3600
+              );
+
+          if (
+            signedError ||
+            !signedData?.signedUrl
+          ) {
+            throw new Error(
+              signedError?.message ||
+                "Impossible de générer l’accès temporaire au fichier."
+            );
+          }
+
+          setSignedUrl(
+            signedData.signedUrl
+          );
 
           setDocument(data);
 
@@ -818,28 +931,335 @@ export default function DocumentDetailPage() {
     }
   }
 
+
+  function ouvrirEdition() {
+    if (
+      !document ||
+      !canEdit
+    ) {
+      return;
+    }
+
+    setFormEdition({
+      titre: document.titre ?? "",
+      description:
+        document.description ?? "",
+      categorie:
+        document.categorie ?? "",
+      dossier:
+        document.dossier ?? "",
+      sous_dossier:
+        document.sous_dossier ?? "",
+      secteur:
+        document.secteur ?? "",
+      prestataire:
+        document.prestataire ?? "",
+      date_document:
+        document.date_document
+          ? document.date_document.slice(
+              0,
+              10
+            )
+          : "",
+      tags:
+        (document.tags ?? []).join(
+          ", "
+        ),
+    });
+
+    setFichierRemplacement(null);
+    setError(null);
+    setSuccess(null);
+    setEditionOuverte(true);
+  }
+
+  function modifierChampEdition<
+    K extends keyof EditionDocumentForm
+  >(
+    champ: K,
+    valeur: EditionDocumentForm[K]
+  ) {
+    setFormEdition(
+      (current) => ({
+        ...current,
+        [champ]: valeur,
+      })
+    );
+  }
+
+  function selectionnerFichierRemplacement(
+    event: ChangeEvent<HTMLInputElement>
+  ) {
+    const selected =
+      event.target.files?.[0] ??
+      null;
+
+    setFichierRemplacement(
+      selected
+    );
+  }
+
+  async function enregistrerModification(
+    event: FormEvent<HTMLFormElement>
+  ) {
+    event.preventDefault();
+
+    if (
+      !document ||
+      !canEdit
+    ) {
+      return;
+    }
+
+    if (
+      !formEdition.titre.trim()
+    ) {
+      setError(
+        "Le titre est obligatoire."
+      );
+      return;
+    }
+
+    if (
+      !formEdition.categorie.trim()
+    ) {
+      setError(
+        "La catégorie est obligatoire."
+      );
+      return;
+    }
+
+    let nouveauPath:
+      | string
+      | null = null;
+
+    try {
+      setEditionBusy(true);
+      setError(null);
+      setSuccess(null);
+
+      const payload: Record<
+        string,
+        unknown
+      > = {
+        titre:
+          formEdition.titre.trim(),
+        description:
+          formEdition.description.trim() ||
+          null,
+        categorie:
+          formEdition.categorie.trim(),
+        dossier:
+          formEdition.dossier.trim() ||
+          null,
+        sous_dossier:
+          formEdition.sous_dossier.trim() ||
+          null,
+        secteur:
+          formEdition.secteur.trim() ||
+          null,
+
+        modifie_par:
+          [
+            profil?.prenom,
+            profil?.nom,
+          ]
+            .filter(Boolean)
+            .join(" ")
+            .trim() ||
+          profil?.email ||
+          user?.email ||
+          "Utilisateur",
+
+        date_modification:
+          new Date().toISOString(),
+        prestataire:
+          formEdition.prestataire.trim() ||
+          null,
+        date_document:
+          formEdition.date_document ||
+          null,
+        tags:
+          formEdition.tags
+            .split(/[;,]+/)
+            .map((tag) =>
+              tag.trim()
+            )
+            .filter(Boolean),
+      };
+
+      if (
+        fichierRemplacement
+      ) {
+        if (!document.magasin_id) {
+          throw new Error(
+            "Le magasin du document est introuvable."
+          );
+        }
+
+        const nomNettoye =
+          nettoyerNomFichier(
+            fichierRemplacement.name
+          );
+
+        nouveauPath = [
+          document.magasin_id,
+          document.dossier ||
+            "sans-dossier",
+          document.sous_dossier ||
+            "racine",
+          String(
+            new Date().getFullYear()
+          ),
+          `${crypto.randomUUID()}-${nomNettoye}`,
+        ].join("/");
+
+        const {
+          error: uploadError,
+        } =
+          await supabase.storage
+            .from("documents")
+            .upload(
+              nouveauPath,
+              fichierRemplacement,
+              {
+                cacheControl:
+                  "3600",
+                upsert: false,
+              }
+            );
+
+        if (uploadError) {
+          throw new Error(
+            `Erreur d’envoi du nouveau fichier : ${uploadError.message}`
+          );
+        }
+
+        payload.fichier_path =
+          nouveauPath;
+
+        // On garde fichier_url pour compatibilité,
+        // mais il contient maintenant le chemin privé.
+        payload.fichier_url =
+          nouveauPath;
+
+        payload.fichier_nom =
+          fichierRemplacement.name;
+
+        payload.extension =
+          fichierRemplacement.name
+            .split(".")
+            .pop()
+            ?.toLowerCase() ??
+          null;
+
+        payload.taille =
+          fichierRemplacement.size;
+      }
+
+      const updated =
+        await updateDocument(
+          document.id,
+          payload as Parameters<
+            typeof updateDocument
+          >[1],
+          scope
+        );
+
+      if (
+        fichierRemplacement
+      ) {
+        const ancienPath =
+          (
+            document as DocumentItem & {
+              fichier_path?: string | null;
+            }
+          ).fichier_path;
+
+        if (
+          ancienPath &&
+          ancienPath !== nouveauPath
+        ) {
+          await supabase.storage
+            .from("documents")
+            .remove([
+              ancienPath,
+            ]);
+        }
+      }
+
+      setDocument(updated);
+      setEditionOuverte(false);
+      setFichierRemplacement(
+        null
+      );
+      setSuccess(
+        `Document modifié par ${
+          [
+            profil?.prenom,
+            profil?.nom,
+          ]
+            .filter(Boolean)
+            .join(" ")
+            .trim() ||
+          profil?.email ||
+          user?.email ||
+          "Utilisateur"
+        }.`
+      );
+
+      await chargerDocument(
+        true
+      );
+    } catch (
+      currentError
+    ) {
+      if (nouveauPath) {
+        try {
+          await supabase.storage
+            .from("documents")
+            .remove([
+              nouveauPath,
+            ]);
+        } catch {
+          // Rien à faire.
+        }
+      }
+
+      setError(
+        messageErreur(
+          currentError
+        )
+      );
+    } finally {
+      setEditionBusy(false);
+    }
+  }
+
   /* =======================================================
      DOCUMENT
   ======================================================= */
 
   function ouvrirNouvelOnglet() {
-    if (
-      !document?.fichier_url
-    ) {
+    if (!signedUrl) {
+      setError(
+        "Le fichier sécurisé n’est pas encore disponible."
+      );
       return;
     }
 
     window.open(
-      document.fichier_url,
+      signedUrl,
       "_blank",
       "noopener,noreferrer"
     );
   }
 
   function telecharger() {
-    if (
-      !document?.fichier_url
-    ) {
+    if (!signedUrl) {
+      setError(
+        "Le fichier sécurisé n’est pas encore disponible."
+      );
       return;
     }
 
@@ -848,11 +1268,11 @@ export default function DocumentDetailPage() {
         "a"
       );
 
-    link.href =
-      document.fichier_url;
+    link.href = signedUrl;
 
     link.download =
-      document.fichier_nom;
+      document?.fichier_nom ||
+      "document";
 
     link.target =
       "_blank";
@@ -1006,6 +1426,19 @@ export default function DocumentDetailPage() {
             {canEdit && (
               <button
                 type="button"
+                onClick={
+                  ouvrirEdition
+                }
+                className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-3 font-semibold text-white transition hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100"
+              >
+                <Pencil className="h-5 w-5" />
+                Modifier
+              </button>
+            )}
+
+            {canEdit && (
+              <button
+                type="button"
                 onClick={() =>
                   void changerFavori()
                 }
@@ -1037,7 +1470,8 @@ export default function DocumentDetailPage() {
               onClick={
                 telecharger
               }
-              className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-3 font-semibold text-white"
+              disabled={!signedUrl}
+              className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Download className="h-5 w-5" />
               Télécharger
@@ -1048,7 +1482,8 @@ export default function DocumentDetailPage() {
               onClick={
                 ouvrirNouvelOnglet
               }
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-3 font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+              disabled={!signedUrl}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-3 font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
             >
               <ExternalLink className="h-5 w-5" />
               Nouvel onglet
@@ -1441,6 +1876,18 @@ export default function DocumentDetailPage() {
                 />
 
                 <InfoItem
+                  label="Dernière modification par"
+                  value={
+                    (
+                      document as DocumentItem & {
+                        modifie_par?: string | null;
+                      }
+                    ).modifie_par ||
+                    "—"
+                  }
+                />
+
+                <InfoItem
                   label="Dernière modification"
                   value={formatDateTime(
                     document.date_modification
@@ -1538,7 +1985,7 @@ export default function DocumentDetailPage() {
               {previewType ===
                 "pdf" && (
                 <iframe
-                  src={`${document.fichier_url}#toolbar=1&navpanes=1&scrollbar=1`}
+                  src={`${signedUrl ?? ""}#toolbar=1&navpanes=1&scrollbar=1`}
                   title={`Aperçu PDF de ${document.titre}`}
                   className="h-[78vh] min-h-[680px] w-full border-0 bg-white"
                   onLoad={() =>
@@ -1554,7 +2001,7 @@ export default function DocumentDetailPage() {
                 <div className="flex min-h-[680px] items-center justify-center p-5">
                   <img
                     src={
-                      document.fichier_url
+                      signedUrl ?? ""
                     }
                     alt={
                       document.titre
@@ -1590,6 +2037,306 @@ export default function DocumentDetailPage() {
         </section>
       </div>
 
+      {editionOuverte &&
+        document && (
+          <div
+            className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="modifier-document-title"
+          >
+            <div className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-3xl bg-white shadow-2xl dark:bg-slate-900">
+              <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white px-6 py-5 dark:border-slate-800 dark:bg-slate-900">
+                <div>
+                  <h2
+                    id="modifier-document-title"
+                    className="text-2xl font-black text-slate-900 dark:text-white"
+                  >
+                    Modifier le document
+                  </h2>
+
+                  <p className="mt-1 text-sm text-slate-500">
+                    Modifie les informations du document et remplace le fichier si nécessaire.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setEditionOuverte(
+                      false
+                    )
+                  }
+                  disabled={
+                    editionBusy
+                  }
+                  className="rounded-xl p-2 text-slate-500 transition hover:bg-slate-100 dark:hover:bg-slate-800"
+                  aria-label="Fermer"
+                >
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
+
+              <form
+                onSubmit={
+                  enregistrerModification
+                }
+                className="space-y-6 p-6"
+              >
+                <div className="grid gap-5 md:grid-cols-2">
+                  <label className="md:col-span-2">
+                    <span className="mb-2 block text-sm font-bold text-slate-700 dark:text-slate-300">
+                      Titre *
+                    </span>
+                    <input
+                      value={
+                        formEdition.titre
+                      }
+                      onChange={(event) =>
+                        modifierChampEdition(
+                          "titre",
+                          event.target.value
+                        )
+                      }
+                      className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                    />
+                  </label>
+
+                  <label>
+                    <span className="mb-2 block text-sm font-bold text-slate-700 dark:text-slate-300">
+                      Catégorie *
+                    </span>
+                    <input
+                      value={
+                        formEdition.categorie
+                      }
+                      onChange={(event) =>
+                        modifierChampEdition(
+                          "categorie",
+                          event.target.value
+                        )
+                      }
+                      className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                    />
+                  </label>
+
+                  <label>
+                    <span className="mb-2 block text-sm font-bold text-slate-700 dark:text-slate-300">
+                      Date du document
+                    </span>
+                    <input
+                      type="date"
+                      value={
+                        formEdition.date_document
+                      }
+                      onChange={(event) =>
+                        modifierChampEdition(
+                          "date_document",
+                          event.target.value
+                        )
+                      }
+                      className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                    />
+                  </label>
+
+                  <label>
+                    <span className="mb-2 block text-sm font-bold text-slate-700 dark:text-slate-300">
+                      Dossier
+                    </span>
+                    <input
+                      value={
+                        formEdition.dossier
+                      }
+                      onChange={(event) =>
+                        modifierChampEdition(
+                          "dossier",
+                          event.target.value
+                        )
+                      }
+                      className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                    />
+                  </label>
+
+                  <label>
+                    <span className="mb-2 block text-sm font-bold text-slate-700 dark:text-slate-300">
+                      Sous-dossier
+                    </span>
+                    <input
+                      value={
+                        formEdition.sous_dossier
+                      }
+                      onChange={(event) =>
+                        modifierChampEdition(
+                          "sous_dossier",
+                          event.target.value
+                        )
+                      }
+                      className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                    />
+                  </label>
+
+                  <label>
+                    <span className="mb-2 block text-sm font-bold text-slate-700 dark:text-slate-300">
+                      Auteur d’origine
+                    </span>
+
+                    <input
+                      value={
+                        document.auteur ||
+                        "—"
+                      }
+                      readOnly
+                      disabled
+                      className="w-full cursor-not-allowed rounded-xl border border-slate-300 bg-slate-100 px-4 py-3 text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
+                    />
+
+                    <p className="mt-2 text-xs text-slate-500">
+                      L’auteur d’origine ne peut pas être modifié.
+                    </p>
+                  </label>
+
+                  <label>
+                    <span className="mb-2 block text-sm font-bold text-slate-700 dark:text-slate-300">
+                      Secteur
+                    </span>
+                    <input
+                      value={
+                        formEdition.secteur
+                      }
+                      onChange={(event) =>
+                        modifierChampEdition(
+                          "secteur",
+                          event.target.value
+                        )
+                      }
+                      className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                    />
+                  </label>
+
+                  <label>
+                    <span className="mb-2 block text-sm font-bold text-slate-700 dark:text-slate-300">
+                      Prestataire
+                    </span>
+                    <input
+                      value={
+                        formEdition.prestataire
+                      }
+                      onChange={(event) =>
+                        modifierChampEdition(
+                          "prestataire",
+                          event.target.value
+                        )
+                      }
+                      className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                    />
+                  </label>
+
+                  <label className="md:col-span-2">
+                    <span className="mb-2 block text-sm font-bold text-slate-700 dark:text-slate-300">
+                      Tags
+                    </span>
+                    <input
+                      value={
+                        formEdition.tags
+                      }
+                      onChange={(event) =>
+                        modifierChampEdition(
+                          "tags",
+                          event.target.value
+                        )
+                      }
+                      placeholder="sécurité, maintenance, contrôle..."
+                      className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                    />
+                  </label>
+
+                  <label className="md:col-span-2">
+                    <span className="mb-2 block text-sm font-bold text-slate-700 dark:text-slate-300">
+                      Description
+                    </span>
+                    <textarea
+                      rows={5}
+                      value={
+                        formEdition.description
+                      }
+                      onChange={(event) =>
+                        modifierChampEdition(
+                          "description",
+                          event.target.value
+                        )
+                      }
+                      className="w-full resize-y rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                    />
+                  </label>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 p-5 dark:border-slate-800">
+                  <div className="flex items-center gap-3">
+                    <Upload className="h-5 w-5 text-blue-600" />
+
+                    <div>
+                      <p className="font-bold text-slate-900 dark:text-white">
+                        Remplacer le fichier
+                      </p>
+
+                      <p className="text-sm text-slate-500">
+                        Facultatif. L’ancien fichier sera supprimé après le remplacement.
+                      </p>
+                    </div>
+                  </div>
+
+                  <input
+                    type="file"
+                    onChange={
+                      selectionnerFichierRemplacement
+                    }
+                    className="mt-4 block w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+                  />
+
+                  {fichierRemplacement && (
+                    <p className="mt-3 text-sm font-medium text-blue-600">
+                      Nouveau fichier : {fichierRemplacement.name}
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex flex-col-reverse gap-3 border-t border-slate-200 pt-5 dark:border-slate-800 sm:flex-row sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setEditionOuverte(
+                        false
+                      )
+                    }
+                    disabled={
+                      editionBusy
+                    }
+                    className="rounded-xl border border-slate-300 px-5 py-3 font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-200"
+                  >
+                    Annuler
+                  </button>
+
+                  <button
+                    type="submit"
+                    disabled={
+                      editionBusy
+                    }
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {editionBusy ? (
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                    ) : (
+                      <Save className="h-5 w-5" />
+                    )}
+
+                    Enregistrer les modifications
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
       {imageFullscreen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 p-4">
           <button
@@ -1606,7 +2353,7 @@ export default function DocumentDetailPage() {
 
           <img
             src={
-              document.fichier_url
+              signedUrl ?? ""
             }
             alt={
               document.titre

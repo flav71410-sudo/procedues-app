@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { supabase } from "@/lib/supabase";
 import { ajouterJournal } from "@/services/journal";
+import { useDialog } from "@/providers/DialogProvider";
 
 type Role = {
   id: string;
@@ -11,6 +12,7 @@ type Role = {
 };
 
 export default function RolesPage() {
+  const dialog = useDialog();
   const [roles, setRoles] = useState<Role[]>([]);
   const [nouveauRole, setNouveauRole] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -72,7 +74,14 @@ export default function RolesPage() {
   }
 
   async function supprimerRole(role: Role) {
-    if (!confirm(`Supprimer le rôle "${role.nom}" ?`)) return;
+    const confirmation = await dialog.delete({
+      title: "Supprimer ce rôle ?",
+      itemName: role.nom,
+      description:
+        "Ce rôle sera définitivement supprimé. La suppression peut être refusée s’il est encore attribué à un utilisateur.",
+    });
+
+    if (!confirmation) return;
 
     const { error } = await supabase
       .from("roles")

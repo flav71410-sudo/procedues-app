@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { AppButton, AppCard } from "@/components/ui";
 import AppGallery, { GalleryPhoto } from "@/components/media/AppGallery";
+import { useAuth } from "@/providers/AuthProvider";
 
 type Props = {
   equipementId: string;
@@ -16,9 +17,67 @@ export default function EquipmentPhotos({
   photos,
   onRefresh,
 }: Props) {
+  const { can } = useAuth();
+  const canEdit = can("equipements.edit");
+
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    let actif = true;
+
+    async function chargerUrlsSignees() {
+      const nouvellesUrls: Record<string, string> = {};
+
+      await Promise.all(
+        photos.map(async (photo) => {
+          if (!photo.path) return;
+
+          const { data, error } = await supabase.storage
+            .from("equipements-photos")
+            .createSignedUrl(photo.path, 3600);
+
+          if (!error && data?.signedUrl) {
+            nouvellesUrls[photo.id] = data.signedUrl;
+          }
+        })
+      );
+
+      if (actif) {
+        setSignedUrls(nouvellesUrls);
+      }
+    }
+
+    void chargerUrlsSignees();
+
+    return () => {
+      actif = false;
+    };
+  }, [photos]);
+
+  const photosSecurisees = useMemo(
+    () =>
+      photos
+        .map((photo) => {
+          const signedUrl = signedUrls[photo.id];
+
+          if (!signedUrl) {
+            return null;
+          }
+
+          return {
+            ...photo,
+            url: signedUrl,
+          };
+        })
+        .filter(
+          (photo): photo is GalleryPhoto =>
+            photo !== null
+        ),
+    [photos, signedUrls]
+  );
 
   async function ajouterPhoto() {
     if (!photoFile) return;
@@ -38,15 +97,13 @@ export default function EquipmentPhotos({
       return;
     }
 
-    const { data } = supabase.storage
-      .from("equipements-photos")
-      .getPublicUrl(filePath);
-
     const { error } = await supabase
       .from("equipements_photos")
       .insert({
         equipement_id: equipementId,
-        url: data.publicUrl,
+        // Bucket privé : on conserve le chemin en base.
+        // L'URL d'affichage est générée temporairement avec createSignedUrl().
+        url: filePath,
         path: filePath,
       });
 
@@ -82,7 +139,8 @@ export default function EquipmentPhotos({
 
   return (
     <>
-      <AppCard title="Ajouter une photo">
+      {canEdit && (
+        <AppCard title="Ajouter une photo">
         <div className="flex flex-col gap-4 md:flex-row">
           <input
             type="file"
@@ -100,15 +158,16 @@ export default function EquipmentPhotos({
             Ajouter
           </AppButton>
         </div>
-      </AppCard>
+        </AppCard>
+      )}
 
       <AppGallery
         title="Galerie"
-        photos={photos}
+        photos={photosSecurisees}
         loadingId={deletingId}
         emptyTitle="Aucune photo"
         emptyDescription="Ajoutez une photo de l'équipement."
-        onDelete={supprimerPhoto}
+        onDelete={canEdit ? supprimerPhoto : undefined}
       />
     </>
   );

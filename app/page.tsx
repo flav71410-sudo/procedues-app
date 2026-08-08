@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
 
@@ -10,6 +10,18 @@ export default function Home() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const supabase = createClient();
+  const [inscriptionOk, setInscriptionOk] = useState(false);
+
+useEffect(() => {
+  const params = new URLSearchParams(window.location.search);
+
+  if (params.get("inscription") === "ok") {
+    setInscriptionOk(true);
+
+    // Nettoie l'URL pour éviter que la popup revienne au prochain refresh.
+    window.history.replaceState({}, "", "/");
+  }
+}, []);
 
   async function handleLogin() {
     setError("");
@@ -38,6 +50,33 @@ window.location.href =
 
   return (
     <main className="min-h-screen bg-[#0078b8] flex items-center justify-center p-6">
+      {inscriptionOk && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+      <div className="text-center">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-green-100 text-2xl">
+          ✓
+        </div>
+
+        <h2 className="mt-4 text-xl font-bold text-gray-900">
+          Inscription réussie
+        </h2>
+
+        <p className="mt-3 text-gray-600">
+          Vous êtes bien inscrit, veuillez vous connecter.
+        </p>
+
+        <button
+          type="button"
+          onClick={() => setInscriptionOk(false)}
+          className="mt-6 w-full rounded-xl bg-[#0078b8] px-4 py-3 font-semibold text-white transition hover:bg-[#00649a]"
+        >
+          Se connecter
+        </button>
+      </div>
+    </div>
+  </div>
+)}
       <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-md">
         <div className="flex justify-center mb-6">
           <img

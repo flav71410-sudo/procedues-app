@@ -153,18 +153,55 @@ function SidebarContent({
     );
   }
 
-  const accueil = navigation.accueil.filter((item) =>
-    can(item.permission)
-  );
+  const estCollaborateur = role === "COLLABORATEUR";
+  const estPermanent = role === "PERMANENT";
+  const estSuperAdmin = role === "SUPER_ADMIN";
 
-  const exploitation = navigation.exploitation.filter((item) =>
-    can(item.permission)
-  );
+const accueil = navigation.accueil.filter((item) => {
+  if (!can(item.permission)) {
+    return false;
+  }
 
-  const administration =
-    navigation.administration.filter((item) =>
+  // Un collaborateur nouvellement inscrit ne voit
+  // que le tableau de bord et son profil.
+  if (estCollaborateur) {
+    return (
+      item.href === "/dashboard" ||
+      item.href === "/profil"
+    );
+  }
+
+  // Le Permanent ne voit pas Analytics.
+  if (estPermanent && item.href === "/analytics") {
+    return false;
+  }
+
+  return true;
+});
+
+const exploitation = estCollaborateur
+  ? []
+  : navigation.exploitation.filter((item) =>
       can(item.permission)
     );
+
+const administration = estCollaborateur
+  ? []
+  : navigation.administration.filter((item) => {
+      if (!can(item.permission)) {
+        return false;
+      }
+
+      // Pages strictement réservées au Super administrateur
+      if (
+        item.href === "/administration/magasins" ||
+        item.href === "/administration/cles-activation"
+      ) {
+        return estSuperAdmin;
+      }
+
+      return true;
+    });
 
   const exploitationOpen = exploitation.some(
     (item) =>

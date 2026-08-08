@@ -32,6 +32,7 @@ import {
 
 import AppShell from "@/components/AppShell";
 import { useAuth } from "@/providers/AuthProvider";
+import { useDialog } from "@/providers/DialogProvider";
 import {
   deleteDocument,
   getDocumentCategories,
@@ -168,6 +169,7 @@ function iconeDocument(
 
 export default function DocumentsPage() {
   const router = useRouter();
+  const dialog = useDialog();
 
   const {
     can,
@@ -383,19 +385,22 @@ export default function DocumentsPage() {
     }
   }
 
-  async function archiver(
+  async function supprimer(
     document: DocumentItem
   ) {
     if (!canDelete) {
       setError(
-        "Tu n’as pas l’autorisation d’archiver ce document."
+        "Tu n’as pas l’autorisation de supprimer ce document."
       );
       return;
     }
 
-    const confirmed = window.confirm(
-      `Archiver le document « ${document.titre} » ?`
-    );
+    const confirmed = await dialog.delete({
+      title: "Supprimer ce document ?",
+      itemName: document.titre,
+      description:
+        "Le document et son fichier seront définitivement supprimés.",
+    });
 
     if (!confirmed) return;
 
@@ -873,7 +878,7 @@ export default function DocumentsPage() {
                   )
                 }
                 onFavorite={changerFavori}
-                onArchive={archiver}
+                onDelete={supprimer}
                 onRestore={restaurer}
               />
             ) : (
@@ -888,7 +893,7 @@ export default function DocumentsPage() {
                   )
                 }
                 onFavorite={changerFavori}
-                onArchive={archiver}
+                onDelete={supprimer}
                 onRestore={restaurer}
               />
             )}
@@ -906,7 +911,7 @@ function DocumentList({
   canDelete,
   onOpen,
   onFavorite,
-  onArchive,
+  onDelete,
   onRestore,
 }: {
   documents: DocumentItem[];
@@ -917,7 +922,7 @@ function DocumentList({
   onFavorite: (
     document: DocumentItem
   ) => void | Promise<void>;
-  onArchive: (
+  onDelete: (
     document: DocumentItem
   ) => void | Promise<void>;
   onRestore: (
@@ -932,6 +937,8 @@ function DocumentList({
             <th className="px-4 py-3">Nom</th>
             <th className="px-4 py-3">Dossier</th>
             <th className="px-4 py-3">Catégorie</th>
+            <th className="px-4 py-3">Auteur</th>
+            <th className="px-4 py-3">Dernière modification</th>
             <th className="px-4 py-3">Date</th>
             <th className="px-4 py-3">Taille</th>
             <th className="px-4 py-3">Version</th>
@@ -986,6 +993,28 @@ function DocumentList({
 
               <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
                 {document.categorie}
+              </td>
+
+              <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
+                {document.auteur || "—"}
+              </td>
+
+              <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
+                <p className="font-medium">
+                  {(
+                    document as DocumentItem & {
+                      modifie_par?: string | null;
+                    }
+                  ).modifie_par || "—"}
+                </p>
+
+                {document.date_modification && (
+                  <p className="mt-1 text-xs text-slate-500">
+                    {formatDate(
+                      document.date_modification
+                    )}
+                  </p>
+                )}
               </td>
 
               <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
@@ -1072,14 +1101,14 @@ function DocumentList({
                             document.id
                           }
                           onClick={() =>
-                            void onArchive(
+                            void onDelete(
                               document
                             )
                           }
                           className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-3 py-2 font-semibold text-white disabled:opacity-50"
                         >
                           <Trash2 className="h-4 w-4" />
-                          Archiver
+                          Supprimer
                         </button>
                       )}
                 </div>
@@ -1099,7 +1128,7 @@ function DocumentGrid({
   canDelete,
   onOpen,
   onFavorite,
-  onArchive,
+  onDelete,
   onRestore,
 }: {
   documents: DocumentItem[];
@@ -1110,7 +1139,7 @@ function DocumentGrid({
   onFavorite: (
     document: DocumentItem
   ) => void | Promise<void>;
-  onArchive: (
+  onDelete: (
     document: DocumentItem
   ) => void | Promise<void>;
   onRestore: (
@@ -1178,6 +1207,32 @@ function DocumentGrid({
               {document.categorie}
             </p>
 
+            <p className="text-slate-600 dark:text-slate-300">
+              <span className="font-medium">
+                Auteur :
+              </span>{" "}
+              {document.auteur || "—"}
+            </p>
+
+            <p className="text-slate-600 dark:text-slate-300">
+              <span className="font-medium">
+                Dernière modification :
+              </span>{" "}
+              {(
+                document as DocumentItem & {
+                  modifie_par?: string | null;
+                }
+              ).modifie_par || "—"}
+            </p>
+
+            {document.date_modification && (
+              <p className="text-xs text-slate-500">
+                Modifié le {formatDate(
+                  document.date_modification
+                )}
+              </p>
+            )}
+
             <p className="text-slate-500">
               {formatTaille(document.taille)} ·
               v{document.version ?? 1}
@@ -1238,11 +1293,11 @@ function DocumentGrid({
                       busyId === document.id
                     }
                     onClick={() =>
-                      void onArchive(document)
+                      void onDelete(document)
                     }
                     className="rounded-lg bg-red-600 px-3 py-2 font-semibold text-white disabled:opacity-50"
                   >
-                    Archiver
+                    Supprimer
                   </button>
                 )}
           </div>

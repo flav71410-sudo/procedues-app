@@ -205,6 +205,7 @@ export default function NouveauDocumentPage() {
     useRef<HTMLInputElement | null>(null);
 
   const {
+    user,
     can,
     profil,
     magasinActif,
@@ -234,6 +235,9 @@ export default function NouveauDocumentPage() {
 
   const [success, setSuccess] =
     useState<string | null>(null);
+
+  const [popupFichierObligatoire, setPopupFichierObligatoire] =
+    useState(false);
 
   const sousDossiers = useMemo(
     () => DOSSIERS[form.dossier] ?? [],
@@ -361,9 +365,8 @@ export default function NouveauDocumentPage() {
     }
 
     if (!fichier) {
-      setError(
-        "Sélectionne un fichier à envoyer."
-      );
+      setError(null);
+      setPopupFichierObligatoire(true);
       return false;
     }
 
@@ -392,7 +395,6 @@ export default function NouveauDocumentPage() {
   async function uploadFichier(
     magasinId: string
   ): Promise<{
-    url: string;
     path: string;
   }> {
     if (!fichier) {
@@ -436,12 +438,7 @@ export default function NouveauDocumentPage() {
       );
     }
 
-    const { data } = supabase.storage
-      .from("documents")
-      .getPublicUrl(path);
-
     return {
-      url: data.publicUrl,
       path,
     };
   }
@@ -471,17 +468,25 @@ export default function NouveauDocumentPage() {
       );
 
       const auteur =
-        form.auteur.trim() ||
-        profil?.nom ||
+        [
+          profil?.prenom,
+          profil?.nom,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .trim() ||
         profil?.email ||
-        null;
+        user?.email ||
+        "Utilisateur";
 
       const tags = form.tags
         .split(/[;,]+/)
         .map((tag) => tag.trim())
         .filter(Boolean);
 
-      const payload: CreateDocumentInput = {
+      const payload: CreateDocumentInput & {
+        fichier_path: string;
+      } = {
         magasin_id: magasinActif.id,
         titre: form.titre.trim(),
         description:
@@ -492,7 +497,10 @@ export default function NouveauDocumentPage() {
           form.dossier.trim() || null,
         sous_dossier:
           form.sous_dossier.trim() || null,
-        fichier_url: upload.url,
+        // Compatibilité avec la colonne historique :
+        // on y stocke désormais le chemin privé, jamais une URL publique.
+        fichier_url: upload.path,
+        fichier_path: upload.path,
         fichier_nom: fichier.name,
         auteur,
         secteur:
@@ -796,14 +804,34 @@ export default function NouveauDocumentPage() {
                 className="md:col-span-2"
               />
 
-              <ChampTexte
-                label="Auteur"
-                value={form.auteur}
-                onChange={(value) =>
-                  setField("auteur", value)
-                }
-                placeholder="Laisser vide pour utiliser le profil connecté"
-              />
+              <label>
+                <span className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-200">
+                  Auteur
+                </span>
+
+                <input
+                  type="text"
+                  value={
+                    [
+                      profil?.prenom,
+                      profil?.nom,
+                    ]
+                      .filter(Boolean)
+                      .join(" ")
+                      .trim() ||
+                    profil?.email ||
+                    user?.email ||
+                    "Utilisateur connecté"
+                  }
+                  readOnly
+                  disabled
+                  className="w-full cursor-not-allowed rounded-xl border border-slate-300 bg-slate-100 px-4 py-3 text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
+                />
+
+                <p className="mt-2 text-xs text-slate-500">
+                  L’auteur est automatiquement défini avec le compte qui ajoute le document.
+                </p>
+              </label>
 
               <ChampDate
                 label="Date du document"
@@ -893,6 +921,51 @@ export default function NouveauDocumentPage() {
             </button>
           </div>
         </form>
+
+        {popupFichierObligatoire && (
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="fichier-obligatoire-title"
+          >
+            <div className="w-full max-w-md rounded-2xl bg-slate-900 p-6 shadow-2xl">
+              <h2
+                id="fichier-obligatoire-title"
+                className="text-xl font-bold text-white"
+              >
+                Fichier obligatoire
+              </h2>
+
+              <p className="mt-4 text-slate-300">
+                Merci d’ajouter un fichier pour pouvoir ajouter le document.
+              </p>
+
+              <div className="mt-8 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setPopupFichierObligatoire(false)}
+                  className="rounded-xl bg-slate-700 px-4 py-2 font-semibold text-white transition hover:bg-slate-600"
+                >
+                  Annuler
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPopupFichierObligatoire(false);
+                    window.setTimeout(() => {
+                      inputRef.current?.click();
+                    }, 0);
+                  }}
+                  className="rounded-xl bg-blue-600 px-4 py-2 font-semibold text-white transition hover:bg-blue-700"
+                >
+                  Ajouter un fichier
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </AppShell>
   );

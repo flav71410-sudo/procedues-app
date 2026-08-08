@@ -20,6 +20,7 @@ import PlanningCalendar from "@/components/planning/PlanningCalendar";
 import PlanningStats from "@/components/planning/PlanningStats";
 import PlanningToolbar from "@/components/planning/PlanningToolbar";
 import { useAuth } from "@/providers/AuthProvider";
+import { useDialog } from "@/providers/DialogProvider";
 import {
   changePlanningStatus,
   deletePlanningEvent,
@@ -62,6 +63,7 @@ function formatHeure(value: string | null): string {
 
 export default function PlanningPage() {
   const router = useRouter();
+  const dialog = useDialog();
 
   const {
     can,
@@ -274,9 +276,13 @@ export default function PlanningPage() {
       return;
     }
 
-    const confirmed = window.confirm(
-      `Supprimer toute la série « ${selectedEvent.titre} » ?`
-    );
+    const confirmed = await dialog.delete({
+      title: "Supprimer cet événement ?",
+      itemName: selectedEvent.titre,
+      description: selectedEvent.recurrent
+        ? "Toute la série récurrente sera définitivement supprimée du planning."
+        : "Cet événement sera définitivement supprimé du planning.",
+    });
 
     if (!confirmed) {
       return;
@@ -512,18 +518,20 @@ export default function PlanningPage() {
                 )}
               </div>
 
-              <button
-                type="button"
-                onClick={() =>
-                  router.push(
-                    `/planning/${selectedEvent.source_event_id}`
-                  )
-                }
-                className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white"
-              >
-                <ExternalLink className="h-5 w-5" />
-                Modifier la série
-              </button>
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    router.push(
+                      `/planning/${selectedEvent.source_event_id}`
+                    )
+                  }
+                  className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white"
+                >
+                  <ExternalLink className="h-5 w-5" />
+                  Modifier la série
+                </button>
+              )}
             </div>
           </div>
         </div>

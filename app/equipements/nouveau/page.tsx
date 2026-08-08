@@ -6,6 +6,13 @@ import {
   useState,
 } from "react";
 
+import {
+  CheckCircle2,
+  Eye,
+  List,
+  X,
+} from "lucide-react";
+
 import AppShell from "@/components/AppShell";
 import {
   AppButton,
@@ -92,6 +99,13 @@ export default function NouvelEquipementPage() {
   const [etat, setEtat] = useState("En service");
   const [observations, setObservations] =
     useState("");
+
+  const [equipementCree, setEquipementCree] = useState<{
+    id: string;
+    numero: string;
+    nom: string;
+    magasinNom: string;
+  } | null>(null);
 
   const chargerReferentiels = useCallback(async () => {
     if (chargementAuth) {
@@ -264,11 +278,12 @@ export default function NouvelEquipementPage() {
         `Équipement créé : ${data.numero} - ${data.nom} (${magasinActif.nom})`
       );
 
-      alert(
-        `Équipement créé avec succès dans ${magasinActif.nom}.`
-      );
-
-      window.location.href = "/equipements";
+      setEquipementCree({
+        id: data.id,
+        numero: data.numero,
+        nom: data.nom,
+        magasinNom: magasinActif.nom,
+      });
     } catch (error) {
       console.error(
         "Erreur création équipement :",
@@ -559,6 +574,92 @@ export default function NouvelEquipementPage() {
             </AppButton>
           </div>
         </AppCard>
+
+        {equipementCree && (
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="equipement-cree-title"
+          >
+            <div className="w-full max-w-lg overflow-hidden rounded-3xl border border-emerald-200 bg-white shadow-2xl dark:border-emerald-900 dark:bg-slate-950">
+              <div className="flex items-start justify-between gap-4 border-b border-slate-200 p-6 dark:border-slate-800">
+                <div className="flex items-start gap-4">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                    <CheckCircle2 className="h-7 w-7" />
+                  </div>
+
+                  <div>
+                    <p className="text-sm font-semibold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
+                      Création réussie
+                    </p>
+
+                    <h2
+                      id="equipement-cree-title"
+                      className="mt-1 text-2xl font-black text-slate-900 dark:text-white"
+                    >
+                      Équipement créé
+                    </h2>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.location.href = "/equipements";
+                  }}
+                  aria-label="Fermer"
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-900"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="space-y-5 p-6">
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 dark:border-emerald-900 dark:bg-emerald-950/30">
+                  <p className="text-sm text-emerald-800 dark:text-emerald-200">
+                    L’équipement a été créé avec succès.
+                  </p>
+
+                  <p className="mt-2 text-lg font-black text-slate-900 dark:text-white">
+                    {equipementCree.numero} - {equipementCree.nom}
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 p-4 dark:border-slate-800">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    Magasin de rattachement
+                  </p>
+
+                  <p className="mt-1 font-bold text-slate-900 dark:text-white">
+                    {equipementCree.magasinNom}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-3 border-t border-slate-200 p-6 dark:border-slate-800 sm:flex-row sm:justify-end">
+                <AppButton
+                  variant="secondary"
+                  onClick={() => {
+                    window.location.href = "/equipements";
+                  }}
+                >
+                  <List className="h-4 w-4" />
+                  Retour à la liste
+                </AppButton>
+
+                <AppButton
+                  onClick={() => {
+                    window.location.href = `/equipements/${equipementCree.id}`;
+                  }}
+                >
+                  <Eye className="h-4 w-4" />
+                  Voir la fiche
+                </AppButton>
+              </div>
+            </div>
+          </div>
+        )}
       </AppPage>
     </AppShell>
   );

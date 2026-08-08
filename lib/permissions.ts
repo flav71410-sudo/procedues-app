@@ -2,7 +2,8 @@ export type AppRole =
   | "SUPER_ADMIN"
   | "ADMIN"
   | "DM"
-  | "PERMANENT";
+  | "PERMANENT"
+  | "COLLABORATEUR";
 
 export type Permission =
   | "dashboard.view"
@@ -30,8 +31,6 @@ export type Permission =
   | "documents.create"
   | "documents.edit"
   | "documents.delete"
-  | "investissements.view"
-| "investissements.manage"
   | "plans.view"
   | "plans.edit"
   | "journal.view"
@@ -43,7 +42,6 @@ export type Permission =
   | "settings.manage"
   | "admin.access"
   | "system.journal.view";
-  
 
 const ALL_PERMISSIONS: Permission[] = [
   "dashboard.view",
@@ -71,8 +69,6 @@ const ALL_PERMISSIONS: Permission[] = [
   "documents.create",
   "documents.edit",
   "documents.delete",
-  "investissements.view",
-"investissements.manage",
   "plans.view",
   "plans.edit",
   "journal.view",
@@ -91,7 +87,6 @@ export const ROLE_PERMISSIONS: Record<AppRole, readonly Permission[]> = {
 
   ADMIN: [
     "dashboard.view",
-    "stores.view",
     "users.view",
     "users.manage",
     "consignes.view",
@@ -113,8 +108,6 @@ export const ROLE_PERMISSIONS: Record<AppRole, readonly Permission[]> = {
     "documents.create",
     "documents.edit",
     "documents.delete",
-    "investissements.view",
-"investissements.manage",
     "plans.view",
     "plans.edit",
     "journal.view",
@@ -125,12 +118,10 @@ export const ROLE_PERMISSIONS: Record<AppRole, readonly Permission[]> = {
     "settings.view",
     "settings.manage",
     "admin.access",
-    "system.journal.view",
   ],
 
   DM: [
     "dashboard.view",
-    "stores.view",
     "users.view",
     "consignes.view",
     "consignes.create",
@@ -146,8 +137,6 @@ export const ROLE_PERMISSIONS: Record<AppRole, readonly Permission[]> = {
     "equipements.edit",
     "documents.view",
     "documents.create",
-    "investissements.view",
-"investissements.manage",
     "plans.view",
     "journal.view",
     "journal.create",
@@ -156,16 +145,23 @@ export const ROLE_PERMISSIONS: Record<AppRole, readonly Permission[]> = {
   ],
 
   PERMANENT: [
+  "dashboard.view",
+  "consignes.view",
+  "planning.view",
+  "maintenance.view",
+  "equipements.view",
+  "documents.view",
+  "plans.view",
+  "journal.view",
+],
+
+  /*
+   * Rôle attribué automatiquement à l'inscription.
+   * Il ne donne accès qu'à la page d'accueil afin que l'utilisateur
+   * puisse voir le message d'attente d'attribution d'un rôle métier.
+   */
+  COLLABORATEUR: [
     "dashboard.view",
-    "consignes.view",
-    "planning.view",
-    "maintenance.view",
-    "maintenance.create",
-    "equipements.view",
-    "documents.view",
-    "plans.view",
-    "journal.view",
-    "journal.create",
   ],
 };
 
@@ -200,6 +196,14 @@ export function normalizeRole(
     return "DM";
   }
 
+  if (
+    role === "COLLABORATEUR" ||
+    role === "COLLAB" ||
+    role.includes("COLLABORATEUR")
+  ) {
+    return "COLLABORATEUR";
+  }
+
   return "PERMANENT";
 }
 
@@ -222,7 +226,6 @@ export function roleLabel(role: AppRole): string {
     ADMIN: "Administrateur / Responsable sécurité",
     DM: "DM",
     PERMANENT: "Permanent",
+    COLLABORATEUR: "Collaborateur",
   }[role];
-
 }
-

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { supabase } from "@/lib/supabase";
 import { ajouterJournal } from "@/services/journal";
+import { useDialog } from "@/providers/DialogProvider";
 
 type Secteur = {
   id: string;
@@ -12,6 +13,7 @@ type Secteur = {
 };
 
 export default function SecteursPage() {
+  const dialog = useDialog();
   const [secteurs, setSecteurs] = useState<Secteur[]>([]);
   const [nouveauSecteur, setNouveauSecteur] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -96,7 +98,14 @@ export default function SecteursPage() {
   }
 
   async function supprimerSecteur(secteur: Secteur) {
-    if (!confirm(`Supprimer le secteur "${secteur.nom}" ?`)) return;
+    const confirmation = await dialog.delete({
+      title: "Supprimer ce secteur ?",
+      itemName: secteur.nom,
+      description:
+        "Ce secteur sera définitivement supprimé. La suppression peut être refusée s’il est encore utilisé par un utilisateur ou par d’autres données du magasin.",
+    });
+
+    if (!confirmation) return;
 
     const { error } = await supabase
       .from("secteurs")

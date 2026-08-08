@@ -28,6 +28,7 @@ import {
 
 import AppShell from "@/components/AppShell";
 import { useAuth } from "@/providers/AuthProvider";
+import { useDialog } from "@/providers/DialogProvider";
 import {
   activationKeyStatus,
   deleteActivationKey,
@@ -173,6 +174,7 @@ function downloadActivationKeyPdf(
 }
 
 export default function ActivationKeysPage() {
+  const dialog = useDialog();
   const { role, loading: authLoading } =
     useAuth();
 
@@ -360,15 +362,20 @@ export default function ActivationKeysPage() {
     setDownloaded(true);
   }
 
-  function closeGeneratedKey() {
+  async function closeGeneratedKey() {
     if (!generatedInfo) {
       return;
     }
 
     if (!copied && !downloaded) {
-      const confirmed = window.confirm(
-        "Attention : cette clé ne pourra plus être affichée. Fermer définitivement sans la copier ni télécharger le PDF ?"
-      );
+      const confirmed = await dialog.confirm({
+        title: "Fermer cette clé ?",
+        description:
+          "Cette clé ne pourra plus être affichée. Vérifie que tu l’as copiée ou téléchargée avant de fermer définitivement cette fenêtre.",
+        confirmLabel: "Fermer quand même",
+        cancelLabel: "Annuler",
+        variant: "warning",
+      });
 
       if (!confirmed) {
         return;
@@ -383,11 +390,16 @@ export default function ActivationKeysPage() {
   async function disableKey(
     key: ActivationKey
   ) {
-    if (
-      !window.confirm(
-        "Désactiver cette clé d’activation ?"
-      )
-    ) {
+    const confirmed = await dialog.confirm({
+      title: "Désactiver cette clé ?",
+      description:
+        "Cette clé d’activation ne pourra plus être utilisée tant qu’elle n’aura pas été réactivée.",
+      confirmLabel: "Désactiver",
+      cancelLabel: "Annuler",
+      variant: "warning",
+    });
+
+    if (!confirmed) {
       return;
     }
 
@@ -429,11 +441,14 @@ export default function ActivationKeysPage() {
   async function removeKey(
     key: ActivationKey
   ) {
-    if (
-      !window.confirm(
-        "Supprimer définitivement cette clé non utilisée ?"
-      )
-    ) {
+    const confirmed = await dialog.delete({
+      title: "Supprimer cette clé d’activation ?",
+      itemName: key.role?.nom ?? "Clé non utilisée",
+      description:
+        "Cette clé non utilisée sera définitivement supprimée et ne pourra plus servir à créer un compte.",
+    });
+
+    if (!confirmed) {
       return;
     }
 
@@ -727,7 +742,7 @@ export default function ActivationKeysPage() {
 
                 <button
                   type="button"
-                  onClick={closeGeneratedKey}
+                  onClick={() => void closeGeneratedKey()}
                   aria-label="Fermer"
                   className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-900"
                 >
@@ -802,7 +817,7 @@ export default function ActivationKeysPage() {
 
                 <button
                   type="button"
-                  onClick={closeGeneratedKey}
+                  onClick={() => void closeGeneratedKey()}
                   className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-3 font-bold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
                 >
                   Fermer

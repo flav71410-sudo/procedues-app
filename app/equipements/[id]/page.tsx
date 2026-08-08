@@ -47,7 +47,6 @@ import {
 } from "@/components/ui";
 import EquipmentDocuments from "@/components/equipements/EquipmentDocuments";
 import EquipmentHistory from "@/components/equipements/EquipmentHistory";
-import EquipmentLocation from "@/components/equipements/EquipmentLocation";
 import EquipmentPhotos from "@/components/equipements/EquipmentPhotos";
 import EquipmentQRCode from "@/components/equipements/EquipmentQRCode";
 import EquipmentVerifications from "@/components/equipements/EquipmentVerifications";
@@ -976,10 +975,6 @@ export default function EquipementDetailPage() {
               id: "historique",
               label: "Historique",
             },
-            {
-              id: "localisation",
-              label: "Localisation",
-            },
           ]}
           />
         </div>
@@ -1463,15 +1458,6 @@ export default function EquipementDetailPage() {
           />
         )}
 
-        {activeTab === "localisation" && (
-          <EquipmentLocation
-            equipementId={equipement.id}
-            planId={equipement.plan_id}
-            positionX={equipement.position_x}
-            positionY={equipement.position_y}
-            onRefresh={chargerDonnees}
-          />
-        )}
       </AppPage>
     </AppShell>
   );

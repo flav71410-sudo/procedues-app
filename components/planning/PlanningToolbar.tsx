@@ -3,6 +3,7 @@
 import { Search, RefreshCw, Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import type { PlanningFilters } from "@/types/planning";
+import { useAuth } from "@/providers/AuthProvider";
 
 type Magasin = {
   readonly id: string
@@ -50,6 +51,8 @@ export default function PlanningToolbar({
   onRefresh,
 }: Props) {
   const router = useRouter();
+  const { can } = useAuth();
+  const canCreate = can("planning.create");
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -185,18 +188,17 @@ export default function PlanningToolbar({
 
         </button>
 
-        <button
-          onClick={()=>
-            router.push("/planning/nouveau")
-          }
-          className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white hover:bg-blue-700"
-        >
-
-          <Plus className="h-5 w-5"/>
-
-          Nouvel évènement
-
-        </button>
+        {canCreate && (
+          <button
+            onClick={() =>
+              router.push("/planning/nouveau")
+            }
+            className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white hover:bg-blue-700"
+          >
+            <Plus className="h-5 w-5" />
+            Nouvel évènement
+          </button>
+        )}
 
       </div>
 

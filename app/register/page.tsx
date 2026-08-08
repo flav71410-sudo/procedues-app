@@ -22,11 +22,6 @@ type Magasin = {
   nom: string;
 };
 
-type RoleRow = {
-  id: string;
-  nom: string;
-};
-
 type CleActivationResult = {
   role_id: string;
   role_nom: string;
@@ -88,25 +83,6 @@ export default function RegisterPage() {
     } finally {
       setLoadingMagasins(false);
     }
-  }
-
-  async function obtenirRoleCollaborateur(): Promise<RoleRow> {
-    const { data, error } = await supabase
-      .from("roles")
-      .select("id, nom")
-      .or("nom.eq.Collaborateur,nom.eq.COLLABORATEUR")
-      .limit(1)
-      .maybeSingle();
-
-    if (error) throw error;
-
-    if (!data) {
-      throw new Error(
-        "Le rôle Collaborateur est introuvable dans la table roles."
-      );
-    }
-
-    return data as RoleRow;
   }
 
   async function consommerCle(code: string): Promise<CleActivationResult> {
@@ -179,10 +155,17 @@ export default function RegisterPage() {
         );
       }
 
-      const roleCollaborateur = await obtenirRoleCollaborateur();
-
-      let roleIdFinal = roleCollaborateur.id;
-      let roleNomFinal = roleCollaborateur.nom;
+      /*
+       * Sans clé d'activation :
+       * le nouvel inscrit reçoit le rôle technique COLLABORATEUR,
+       * sans role_id. Il n'a aucun accès métier tant qu'un responsable
+       * ne lui attribue pas un rôle depuis l'administration.
+       *
+       * Avec une clé d'activation :
+       * le rôle et le magasin provenant de la clé sont appliqués.
+       */
+      let roleIdFinal: string | null = null;
+      let roleNomFinal = "Collaborateur";
       let magasinIdFinal = magasinId;
       let magasinNomFinal =
         magasins.find((magasin) => magasin.id === magasinId)?.nom ??
@@ -227,18 +210,12 @@ export default function RegisterPage() {
         magasinIdFinal
       );
 
-      setSuccess(
-        cleanCle
-          ? `Compte créé avec succès en tant que ${roleNomFinal} pour ${magasinNomFinal}.`
-          : `Compte Collaborateur créé avec succès pour ${magasinNomFinal}. Tu peux maintenant te connecter.`
-      );
+      // Supabase peut ouvrir automatiquement une session après signUp.
+// On la ferme afin que l'utilisateur revienne bien sur l'écran de connexion.
+await supabase.auth.signOut();
 
-      setPrenom("");
-      setNom("");
-      setEmail("");
-      setPassword("");
-      setMagasinId("");
-      setCleActivation("");
+// Retour vers la connexion avec indication d'inscription réussie.
+window.location.href = "/?inscription=ok";
     } catch (currentError) {
       console.error("Erreur inscription :", currentError);
       setError(messageErreur(currentError));
@@ -350,7 +327,7 @@ export default function RegisterPage() {
                   setCleActivation(event.target.value.toUpperCase())
                 }
                 disabled={loading}
-                placeholder="XXXX-XXXX-XXXX-XXXX"
+                placeholder="CASTO-XXXX-XXXX-XXXX"
                 autoComplete="off"
                 spellCheck={false}
                 className="w-full rounded-xl border border-amber-300 bg-white px-4 py-3 font-mono uppercase tracking-wide text-gray-900 outline-none transition placeholder:font-sans placeholder:normal-case placeholder:tracking-normal placeholder:text-gray-400 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 disabled:cursor-not-allowed disabled:bg-gray-100"

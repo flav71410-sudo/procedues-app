@@ -5,6 +5,7 @@ import { FileText, Trash2, ExternalLink } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { AppButton, AppCard, AppEmptyState, AppSelect } from "@/components/ui";
 import { useDialog } from "@/providers/DialogProvider";
+import { useAuth } from "@/providers/AuthProvider";
 
 type DocumentItem = {
   id: string;
@@ -27,6 +28,8 @@ type Props = {
 
 export default function EquipmentDocuments({ equipementId }: Props) {
   const dialog = useDialog();
+  const { can } = useAuth();
+  const canEdit = can("equipements.edit");
 
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [linkedDocuments, setLinkedDocuments] = useState<LinkedDocument[]>([]);
@@ -119,7 +122,8 @@ export default function EquipmentDocuments({ equipementId }: Props) {
 
   return (
     <div className="space-y-6">
-      <AppCard title="Associer un document existant">
+      {canEdit && (
+        <AppCard title="Associer un document existant">
         <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_auto]">
           <AppSelect
             value={selectedDocumentId}
@@ -137,7 +141,8 @@ export default function EquipmentDocuments({ equipementId }: Props) {
             Associer
           </AppButton>
         </div>
-      </AppCard>
+        </AppCard>
+      )}
 
       <AppCard title="Documents liés">
         {linkedDocuments.length === 0 ? (
@@ -185,14 +190,16 @@ export default function EquipmentDocuments({ equipementId }: Props) {
                       </AppButton>
                     </a>
 
-                    <AppButton
-                      variant="danger"
-                      className="px-3 py-2 text-xs"
-                      onClick={() => retirerLien(link)}
-                    >
-                      <Trash2 size={14} />
-                      Retirer
-                    </AppButton>
+                    {canEdit && (
+                      <AppButton
+                        variant="danger"
+                        className="px-3 py-2 text-xs"
+                        onClick={() => retirerLien(link)}
+                      >
+                        <Trash2 size={14} />
+                        Retirer
+                      </AppButton>
+                    )}
                   </div>
                 </div>
               );

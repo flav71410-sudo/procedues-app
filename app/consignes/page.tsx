@@ -26,6 +26,7 @@ import {
 
 import AppShell from "@/components/AppShell";
 import { useAuth } from "@/providers/AuthProvider";
+import { useDialog } from "@/providers/DialogProvider";
 import {
   deleteConsigne,
   getConsignes,
@@ -129,6 +130,7 @@ function typeApercuFichier(
 
 export default function ConsignesPage() {
   const router = useRouter();
+  const dialog = useDialog();
 
   const {
     can,
@@ -309,9 +311,12 @@ const canDelete = can("consignes.delete");
       return;
     }
 
-    const confirmed = window.confirm(
-      `Archiver la consigne « ${consigne.titre} » ?`
-    );
+    const confirmed = await dialog.delete({
+      title: "Supprimer cette consigne ?",
+      itemName: consigne.titre,
+      description:
+        "La consigne et son éventuel fichier joint seront définitivement supprimés.",
+    });
 
     if (!confirmed) return;
 
@@ -810,7 +815,7 @@ const canDelete = can("consignes.delete");
                             ) : (
                               <Trash2 className="h-4 w-4" />
                             )}
-                            Archiver
+                            Supprimer
                           </button>
                         )}
                     </div>

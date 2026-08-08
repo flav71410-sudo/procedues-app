@@ -36,6 +36,7 @@ import {
 } from "@/components/ui";
 import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/providers/AuthProvider";
+import { useDialog } from "@/providers/DialogProvider";
 import { ajouterJournal } from "@/services/journal";
 
 type TypeEquipement = {
@@ -137,6 +138,7 @@ function erreurLisible(error: unknown): string {
 
 export default function EquipementsPage() {
   const router = useRouter();
+  const dialog = useDialog();
 
   const {
     can,
@@ -166,6 +168,13 @@ export default function EquipementsPage() {
   const [actualisation, setActualisation] = useState(false);
   const [suppressionId, setSuppressionId] =
     useState<string | null>(null);
+
+  const [maintenanceBloquante, setMaintenanceBloquante] =
+    useState<{
+      numero: string;
+      nom: string;
+      nombre: number;
+    } | null>(null);
 
   const [erreur, setErreur] =
     useState<string | null>(null);
@@ -431,9 +440,52 @@ export default function EquipementsPage() {
       return;
     }
 
-    const confirmation = window.confirm(
-      `Supprimer définitivement l’équipement « ${equipement.numero} - ${equipement.nom} » ?`
-    );
+    try {
+      setErreur(null);
+
+      const {
+        count: nombreMaintenances,
+        error: maintenanceError,
+      } = await supabase
+        .from("maintenances")
+        .select("id", {
+          count: "exact",
+          head: true,
+        })
+        .eq("equipement_id", equipement.id);
+
+      if (maintenanceError) {
+        throw maintenanceError;
+      }
+
+      if ((nombreMaintenances ?? 0) > 0) {
+        setMaintenanceBloquante({
+          numero: equipement.numero,
+          nom: equipement.nom,
+          nombre: nombreMaintenances ?? 0,
+        });
+        return;
+      }
+    } catch (error) {
+      console.error(
+        "Erreur vérification maintenances équipement :",
+        error
+      );
+
+      setErreur(
+        `Impossible de vérifier les maintenances associées : ${erreurLisible(
+          error
+        )}`
+      );
+      return;
+    }
+
+    const confirmation = await dialog.delete({
+      title: "Supprimer cet équipement ?",
+      itemName: `${equipement.numero} - ${equipement.nom}`,
+      description:
+        "L’équipement et ses informations seront définitivement supprimés.",
+    });
 
     if (!confirmation) return;
 
@@ -454,11 +506,17 @@ export default function EquipementsPage() {
         );
       }
 
-      const { error } = await requete;
+      const { data, error } = await requete.select("id");
 
-      if (error) {
-        throw error;
-      }
+if (error) {
+  throw error;
+}
+
+if (!data || data.length === 0) {
+  throw new Error(
+    "La suppression n’a pas été effectuée dans la base de données."
+  );
+}
 
       setEquipements((liste) =>
         liste.filter(
@@ -1099,6 +1157,52 @@ export default function EquipementsPage() {
               )}
             </div>
           </>
+        )}
+
+        {maintenanceBloquante && (
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="maintenance-bloquante-title"
+          >
+            <div className="w-full max-w-md rounded-2xl bg-slate-900 p-6 shadow-2xl">
+              <h2
+                id="maintenance-bloquante-title"
+                className="text-xl font-bold text-white"
+              >
+                Suppression impossible
+              </h2>
+
+              <p className="mt-4 text-slate-300">
+                {maintenanceBloquante.nombre > 1
+                  ? `${maintenanceBloquante.nombre} maintenances sont associées à cet équipement.`
+                  : "Une maintenance est associée à cet équipement."}
+              </p>
+
+              <p className="mt-2 font-semibold text-red-400">
+                {maintenanceBloquante.numero} - {maintenanceBloquante.nom}
+              </p>
+
+              <p className="mt-4 text-sm text-slate-400">
+                Supprime ou détache d’abord
+                {maintenanceBloquante.nombre > 1
+                  ? " les maintenances associées"
+                  : " la maintenance associée"}
+                , puis réessayez.
+              </p>
+
+              <div className="mt-8 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setMaintenanceBloquante(null)}
+                  className="rounded-xl bg-blue-600 px-5 py-2.5 font-semibold text-white transition hover:bg-blue-700"
+                >
+                  Compris
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </AppPage>
     </AppShell>

@@ -48,9 +48,7 @@ export default function AlertsPanel({
               Alertes prioritaires
             </h2>
 
-            <p className="text-sm text-gray-500 dark:text-slate-400">
-              Données analysées depuis Supabase
-            </p>
+
           </div>
         </div>
 

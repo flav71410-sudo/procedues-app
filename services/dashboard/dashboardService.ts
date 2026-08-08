@@ -297,7 +297,7 @@ export async function getDashboardData(
 
   let plansQuery = supabase
     .from("plans")
-    .select("id, nom, image_url", { count: "exact" })
+    .select("id, nom, image_url, image_path", { count: "exact" })
     .order("nom", { ascending: true });
 
   equipementsQuery = appliquerFiltreMagasin(equipementsQuery, scope);
@@ -322,9 +322,9 @@ export async function getDashboardData(
       tousMagasins: Boolean(scope.tousMagasins),
     }),
     getConsignes({
-  magasinId: scope.magasinId,
-  tousMagasins: Boolean(scope.tousMagasins),
-}),
+      magasinId: scope.magasinId,
+      tousMagasins: Boolean(scope.tousMagasins),
+    }),
     getConsigneStats({
       magasinId: scope.magasinId,
       tousMagasins: Boolean(scope.tousMagasins),
@@ -417,6 +417,27 @@ export async function getDashboardData(
     return priorite.includes("critique") || priorite.includes("urgent") || criticite.includes("critique");
   });
 
+  const maintenancesAvecReserve = maintenances.filter((m) => {
+    const resultat = normaliserValeur(m.resultat_label);
+
+    return (
+      resultat === "conforme avec reserve" ||
+      resultat === "conforme avec reserves" ||
+      resultat.includes("avec reserve")
+    );
+  });
+
+  const maintenancesNonConformes = maintenances.filter((m) => {
+    const resultat = normaliserValeur(m.resultat_label);
+
+    return (
+      resultat === "non conforme" ||
+      resultat === "non-conforme" ||
+      resultat.includes("non conforme") ||
+      resultat.includes("non-conforme")
+    );
+  });
+
   const maintenanceRetard = maintenanceOuvertes.filter((m) => {
     if (!m.date_debut) return false;
     return String(m.date_debut).slice(0, 10) < aujourdHui;
@@ -442,6 +463,26 @@ export async function getDashboardData(
       title: `${maintenanceCritiques.length} maintenance${maintenanceCritiques.length > 1 ? "s" : ""} critique${maintenanceCritiques.length > 1 ? "s" : ""}`,
       description: "Des interventions prioritaires nécessitent une attention immédiate.",
       level: "urgent",
+      href: "/maintenance",
+    });
+  }
+
+  if (maintenancesNonConformes.length > 0) {
+    alertes.push({
+      id: "maintenance-non-conforme",
+      title: `${maintenancesNonConformes.length} maintenance${maintenancesNonConformes.length > 1 ? "s" : ""} non conforme${maintenancesNonConformes.length > 1 ? "s" : ""}`,
+      description: "Un résultat non conforme nécessite une action corrective et un suivi.",
+      level: "urgent",
+      href: "/maintenance",
+    });
+  }
+
+  if (maintenancesAvecReserve.length > 0) {
+    alertes.push({
+      id: "maintenance-avec-reserve",
+      title: `${maintenancesAvecReserve.length} maintenance${maintenancesAvecReserve.length > 1 ? "s" : ""} conforme${maintenancesAvecReserve.length > 1 ? "s" : ""} avec réserve`,
+      description: "Des réserves restent à lever malgré un résultat conforme.",
+      level: "warning",
       href: "/maintenance",
     });
   }
@@ -604,6 +645,18 @@ export async function getDashboardData(
       )
     ) ?? plans[0] ?? null;
 
+  let planPrincipalImageUrl = planPrincipal?.image_url ?? "";
+
+  if (planPrincipal?.image_path) {
+    const { data: signedPlanData, error: signedPlanError } = await supabase.storage
+      .from("plans")
+      .createSignedUrl(planPrincipal.image_path, 60 * 60);
+
+    if (!signedPlanError && signedPlanData?.signedUrl) {
+      planPrincipalImageUrl = signedPlanData.signedUrl;
+    }
+  }
+
   const equipementsPlan = planPrincipal
     ? equipements
         .filter((e) => e.plan_id === planPrincipal.id)
@@ -631,7 +684,7 @@ export async function getDashboardData(
     alertes,
     supervision: {
       plan: planPrincipal
-        ? { id: planPrincipal.id, nom: planPrincipal.nom, image_url: planPrincipal.image_url }
+        ? { id: planPrincipal.id, nom: planPrincipal.nom, image_url: planPrincipalImageUrl }
         : null,
       equipements: equipementsPlan,
       equipementsCritiques: equipementsPlan.filter(

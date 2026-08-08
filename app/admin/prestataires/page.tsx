@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { supabase } from "@/lib/supabase";
 import { ajouterJournal } from "@/services/journal";
+import { useDialog } from "@/providers/DialogProvider";
 
 type Prestataire = {
   id: string;
@@ -18,6 +19,7 @@ type Prestataire = {
 };
 
 export default function PrestatairesPage() {
+  const dialog = useDialog();
   const [prestataires, setPrestataires] = useState<Prestataire[]>([]);
   const [recherche, setRecherche] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -144,7 +146,14 @@ export default function PrestatairesPage() {
   }
 
   async function supprimerPrestataire(p: Prestataire) {
-    if (!confirm(`Supprimer le prestataire "${p.nom}" ?`)) return;
+    const confirmation = await dialog.delete({
+      title: "Supprimer ce prestataire ?",
+      itemName: p.nom,
+      description:
+        "Ce prestataire sera définitivement supprimé. La suppression peut être refusée s’il est encore rattaché à des données du magasin.",
+    });
+
+    if (!confirmation) return;
 
     const { error } = await supabase
       .from("prestataires")

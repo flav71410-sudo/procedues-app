@@ -16,6 +16,7 @@ import {
   RefreshCw,
   Search,
   ShieldCheck,
+  Trash2,
   UserCog,
   Users,
   X,
@@ -24,6 +25,7 @@ import {
 import AppShell from "@/components/AppShell";
 import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/providers/AuthProvider";
+import { useDialog } from "@/providers/DialogProvider";
 import { ajouterJournal } from "@/services/journal";
 
 type RoleRow = {
@@ -140,6 +142,8 @@ function nomComplet(profil: ProfilRow): string {
 }
 
 export default function UtilisateursPage() {
+  const dialog = useDialog();
+
   const {
     can,
     role,
@@ -166,6 +170,7 @@ export default function UtilisateursPage() {
   const [chargement, setChargement] = useState(true);
   const [actualisation, setActualisation] = useState(false);
   const [enregistrement, setEnregistrement] = useState(false);
+  const [suppressionId, setSuppressionId] = useState<string | null>(null);
 
   const [erreur, setErreur] = useState<string | null>(null);
   const [succes, setSucces] = useState<string | null>(null);
@@ -578,6 +583,122 @@ export default function UtilisateursPage() {
       );
     } finally {
       setEnregistrement(false);
+    }
+  }
+
+
+  async function supprimerUtilisateur() {
+    if (!selection) return;
+
+    if (!estSuperAdmin) {
+      setErreur(
+        "Seul un Super administrateur peut supprimer définitivement un utilisateur."
+      );
+      return;
+    }
+
+    if (selection.id === profilConnecte?.id) {
+      setErreur(
+        "Tu ne peux pas supprimer ton propre compte."
+      );
+      return;
+    }
+
+    const nomUtilisateur = nomComplet(selection);
+
+    const confirmation = await dialog.delete({
+      title: "Supprimer cet utilisateur ?",
+      itemName: nomUtilisateur,
+      description:
+        "Le compte sera définitivement supprimé de CastoManager et de Supabase Auth. Cette action est irréversible.",
+    });
+
+    if (!confirmation) return;
+
+    try {
+      setSuppressionId(selection.id);
+      setErreur(null);
+      setSucces(null);
+
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+      if (sessionError) {
+        throw sessionError;
+      }
+
+      const accessToken = session?.access_token;
+
+      if (!accessToken) {
+        throw new Error(
+          "Session utilisateur introuvable. Reconnecte-toi puis réessaie."
+        );
+      }
+
+      const response = await fetch(
+        `/api/admin/users/${selection.id}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        }
+      );
+
+      const resultat = (await response.json()) as {
+        success?: boolean;
+        error?: string;
+        warning?: string;
+      };
+
+      if (!response.ok || !resultat.success) {
+        throw new Error(
+          resultat.error ??
+            "Impossible de supprimer l’utilisateur."
+        );
+      }
+
+      setProfils((liste) =>
+        liste.filter(
+          (profil) => profil.id !== selection.id
+        )
+      );
+
+      fermerPanneau();
+
+      try {
+        await ajouterJournal(
+          "Suppression",
+          "Utilisateurs",
+          `Utilisateur supprimé définitivement : ${nomUtilisateur}`
+        );
+      } catch (journalError) {
+        console.warn(
+          "Utilisateur supprimé, mais journalisation impossible :",
+          journalError
+        );
+      }
+
+      setSucces(
+        resultat.warning
+          ? `Utilisateur supprimé. ${resultat.warning}`
+          : `L’utilisateur « ${nomUtilisateur} » a été supprimé définitivement.`
+      );
+    } catch (error) {
+      console.error(
+        "Erreur suppression utilisateur :",
+        error
+      );
+
+      setErreur(
+        error instanceof Error
+          ? error.message
+          : "Impossible de supprimer l’utilisateur."
+      );
+    } finally {
+      setSuppressionId(null);
     }
   }
 
@@ -1031,19 +1152,54 @@ export default function UtilisateursPage() {
                   </label>
 
                   {canManage ? (
-                    <button
-                      type="submit"
-                      disabled={enregistrement}
-                      className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {enregistrement ? (
-                        <Loader2 className="h-5 w-5 animate-spin" />
-                      ) : (
-                        <ShieldCheck className="h-5 w-5" />
-                      )}
+                    <div className="space-y-3">
+                      <button
+                        type="submit"
+                        disabled={
+                          enregistrement ||
+                          suppressionId === selection.id
+                        }
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {enregistrement ? (
+                          <Loader2 className="h-5 w-5 animate-spin" />
+                        ) : (
+                          <ShieldCheck className="h-5 w-5" />
+                        )}
 
-                      Enregistrer les modifications
-                    </button>
+                        Enregistrer les modifications
+                      </button>
+
+                      {estSuperAdmin &&
+                        selection.id !== profilConnecte?.id && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void supprimerUtilisateur()
+                            }
+                            disabled={
+                              suppressionId === selection.id ||
+                              enregistrement
+                            }
+                            className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-red-300 bg-red-50 px-5 py-3 font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300 dark:hover:bg-red-950/60"
+                          >
+                            {suppressionId === selection.id ? (
+                              <Loader2 className="h-5 w-5 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-5 w-5" />
+                            )}
+
+                            Supprimer définitivement l’utilisateur
+                          </button>
+                        )}
+
+                      {estSuperAdmin &&
+                        selection.id === profilConnecte?.id && (
+                          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+                            Ton propre compte ne peut pas être supprimé depuis cette page.
+                          </div>
+                        )}
+                    </div>
                   ) : (
                     <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200">
                       Tu disposes d’un accès en lecture seule.

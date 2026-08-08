@@ -2,7 +2,11 @@
 
 import { ReactNode } from "react";
 
-type Role = "ADMIN" | "DM" | "PERMANENT";
+type Role =
+  | "SUPER_ADMIN"
+  | "ADMIN"
+  | "DM"
+  | "PERMANENT";
 
 type AccessControlProps = {
   role: string;

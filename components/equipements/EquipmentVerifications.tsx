@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { AppBadge, AppButton, AppCard, AppEmptyState, AppInput, AppSelect, AppTextarea } from "@/components/ui";
 import { useDialog } from "@/providers/DialogProvider";
 import { ajouterHistorique } from "@/app/services/historique";
+import { useAuth } from "@/providers/AuthProvider";
 
 type TypeVerification = {
   id: string;
@@ -30,11 +31,21 @@ type Props = {
   equipementNom: string;
 };
 
+function normaliserTexte(value: string | null | undefined): string {
+  return (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
 export default function EquipmentVerifications({
   equipementId,
   equipementNom,
 }: Props) {
   const dialog = useDialog();
+  const { can } = useAuth();
+  const canEdit = can("equipements.edit");
 
   const [verifications, setVerifications] = useState<Verification[]>([]);
   const [types, setTypes] = useState<TypeVerification[]>([]);
@@ -89,6 +100,67 @@ export default function EquipmentVerifications({
     return d.toISOString().split("T")[0];
   }
 
+  async function terminerEvenementPlanningLie(
+    typeNom: string,
+    dateRealisee: string
+  ) {
+    const { data: evenements, error } = await supabase
+      .from("planning_evenements")
+      .select(
+        "id, titre, categorie, date_evenement, statut, maintenance_id"
+      )
+      .eq("equipement_id", equipementId)
+      .eq("actif", true)
+      .is("maintenance_id", null)
+      .lte("date_evenement", dateRealisee)
+      .neq("statut", "termine")
+      .neq("statut", "annule")
+      .order("date_evenement", { ascending: false });
+
+    if (error) {
+      throw new Error(
+        `La vérification a été enregistrée, mais impossible de rechercher l'événement Planning associé : ${error.message}`
+      );
+    }
+
+    const typeNormalise = normaliserTexte(typeNom);
+
+    const evenementLie = (evenements ?? []).find((evenement) => {
+      const titre = normaliserTexte(evenement.titre);
+      const categorie = normaliserTexte(evenement.categorie);
+
+      const categorieVerification =
+        categorie.includes("verif") ||
+        categorie.includes("controle") ||
+        categorie.includes("inspection");
+
+      const titreCorrespond =
+        typeNormalise.length > 0 &&
+        (titre.includes(typeNormalise) ||
+          typeNormalise.includes(titre));
+
+      return categorieVerification || titreCorrespond;
+    });
+
+    if (!evenementLie) {
+      return;
+    }
+
+    const { error: updateError } = await supabase
+      .from("planning_evenements")
+      .update({
+        statut: "termine",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", evenementLie.id);
+
+    if (updateError) {
+      throw new Error(
+        `La vérification a été enregistrée, mais impossible de clôturer l'événement Planning associé : ${updateError.message}`
+      );
+    }
+  }
+
   async function ajouterVerification() {
     const type = types.find((t) => t.id === typeId);
 
@@ -111,10 +183,27 @@ export default function EquipmentVerifications({
       observations: observations.trim() || null,
     });
 
-    setLoading(false);
-
     if (error) {
+      setLoading(false);
       alert(error.message);
+      return;
+    }
+
+    try {
+      // Une vérification enregistrée correspond à une échéance réalisée :
+      // on clôture automatiquement l'événement Planning associé pour
+      // éviter qu'il reste en alerte "en retard" sur le tableau de bord.
+      await terminerEvenementPlanningLie(
+        type.nom,
+        dateRealisation
+      );
+    } catch (syncError) {
+      setLoading(false);
+      alert(
+        syncError instanceof Error
+          ? syncError.message
+          : "La vérification a été enregistrée mais la synchronisation du planning a échoué."
+      );
       return;
     }
 
@@ -130,13 +219,15 @@ export default function EquipmentVerifications({
       ).toLocaleDateString("fr-FR")}.`,
     });
 
+    setLoading(false);
+
     setTypeId("");
     setDateRealisation("");
     setResultat("Conforme");
     setPrestataire("");
     setObservations("");
 
-    chargerDonnees();
+    await chargerDonnees();
   }
 
   async function supprimerVerification(verification: Verification) {
@@ -190,7 +281,8 @@ export default function EquipmentVerifications({
 
   return (
     <div className="space-y-6">
-      <AppCard title="Nouvelle vérification">
+      {canEdit && (
+        <AppCard title="Nouvelle vérification">
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <AppSelect
             label="Type de vérification"
@@ -247,7 +339,8 @@ export default function EquipmentVerifications({
             Ajouter la vérification
           </AppButton>
         </div>
-      </AppCard>
+        </AppCard>
+      )}
 
       <AppCard title="Historique des vérifications">
         {verifications.length === 0 ? (
@@ -303,14 +396,16 @@ export default function EquipmentVerifications({
                     )}
                   </div>
 
-                  <AppButton
-                    variant="danger"
-                    className="px-3 py-2 text-xs"
-                    onClick={() => supprimerVerification(verification)}
-                  >
-                    <Trash2 size={14} />
-                    Supprimer
-                  </AppButton>
+                  {canEdit && (
+                    <AppButton
+                      variant="danger"
+                      className="px-3 py-2 text-xs"
+                      onClick={() => supprimerVerification(verification)}
+                    >
+                      <Trash2 size={14} />
+                      Supprimer
+                    </AppButton>
+                  )}
                 </div>
               </div>
             ))}

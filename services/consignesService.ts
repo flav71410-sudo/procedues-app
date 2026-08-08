@@ -183,12 +183,6 @@ export async function createConsigne(
       );
     }
 
-    if (!contenu) {
-      throw new Error(
-        "Le contenu est obligatoire."
-      );
-    }
-
     if (!categorie) {
       throw new Error(
         "La catégorie est obligatoire."
@@ -204,7 +198,7 @@ export async function createConsigne(
     const payload: ConsigneCreateInput = {
       ...input,
       titre,
-      contenu,
+      contenu: contenu || "",
       categorie,
       priorite,
       secteur:
@@ -265,17 +259,8 @@ export async function updateConsigne(
     }
 
     if (input.contenu !== undefined) {
-      const contenu = normalizeText(
-        input.contenu
-      );
-
-      if (!contenu) {
-        throw new Error(
-          "Le contenu est obligatoire."
-        );
-      }
-
-      payload.contenu = contenu;
+      payload.contenu =
+        normalizeText(input.contenu) || "";
     }
 
     if (input.categorie !== undefined) {

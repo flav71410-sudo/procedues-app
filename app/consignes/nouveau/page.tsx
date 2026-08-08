@@ -341,13 +341,6 @@ export default function NouvelleConsignePage() {
       return false;
     }
 
-    if (!form.contenu.trim()) {
-      setError(
-        "Le contenu de la consigne est obligatoire."
-      );
-      return false;
-    }
-
     if (!form.categorie.trim()) {
       setError(
         "La catégorie est obligatoire."
@@ -596,7 +589,7 @@ export default function NouvelleConsignePage() {
           <Section title="Contenu de la consigne">
             <label>
               <span className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-200">
-                Contenu *
+                Contenu
               </span>
 
               <textarea

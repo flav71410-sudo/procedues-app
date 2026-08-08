@@ -122,7 +122,43 @@ const peutSupprimerPlan = [
           getTousEquipements(scope),
         ]);
 
-      setPlans(plansData);
+      const plansSecurises = await Promise.all(
+        plansData.map(async (plan) => {
+          if (!plan.image_path) {
+            return plan;
+          }
+
+          const { data, error: signedError } =
+            await supabase.storage
+              .from("plans")
+              .createSignedUrl(
+                plan.image_path,
+                3600
+              );
+
+          if (
+            signedError ||
+            !data?.signedUrl
+          ) {
+            console.error(
+              `Impossible de générer l'URL signée du plan ${plan.id} :`,
+              signedError
+            );
+
+            return {
+              ...plan,
+              image_url: "",
+            };
+          }
+
+          return {
+            ...plan,
+            image_url: data.signedUrl,
+          };
+        })
+      );
+
+      setPlans(plansSecurises);
       setEquipements(equipementsData);
     } catch (error) {
       const message =
@@ -268,19 +304,15 @@ const peutSupprimerPlan = [
         throw uploadError;
       }
 
-      const { data: publicUrlData } =
-        supabase.storage
-          .from("plans")
-          .getPublicUrl(filePath);
-
       const dimensions =
         await lireDimensionsImage(fichier);
 
       try {
         await createPlan({
           nom: nom.trim(),
-          image_url:
-            publicUrlData.publicUrl,
+          // Bucket privé : on conserve le chemin,
+          // l'URL d'affichage sera signée au chargement.
+          image_url: filePath,
           image_path: filePath,
           largeur:
             dimensions?.largeur ?? null,
@@ -616,11 +648,17 @@ const peutSupprimerPlan = [
                       className="group block overflow-hidden"
                     >
                       <div className="relative">
-                        <img
-                          src={plan.image_url}
-                          alt={`Plan ${plan.nom}`}
-                          className="h-56 w-full object-cover transition duration-300 group-hover:scale-105"
-                        />
+                        {plan.image_url?.trim() ? (
+                          <img
+                            src={plan.image_url}
+                            alt={`Plan ${plan.nom}`}
+                            className="h-56 w-full object-cover transition duration-300 group-hover:scale-105"
+                          />
+                        ) : (
+                          <div className="flex h-56 w-full items-center justify-center bg-slate-100 text-slate-500 dark:bg-slate-900 dark:text-slate-400">
+                            <ImageIcon size={42} />
+                          </div>
+                        )}
 
                         <div className="absolute right-3 top-3 rounded-full bg-black/70 px-3 py-1 text-xs font-semibold text-white backdrop-blur">
                           {total} équipement
@@ -699,24 +737,26 @@ const peutSupprimerPlan = [
                           </AppButton>
                         </Link>
 
-                        <a
-                          href={plan.image_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          <AppButton
-                            variant="secondary"
-                            className="px-3 py-2 text-xs"
+                        {plan.image_url?.trim() && (
+                          <a
+                            href={plan.image_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
                           >
-                            <ImageIcon size={14} />
-                            Voir l’image
-                          </AppButton>
-                        </a>
+                            <AppButton
+                              variant="secondary"
+                              className="px-3 py-2 text-xs"
+                            >
+                              <ImageIcon size={14} />
+                              Voir l’image
+                            </AppButton>
+                          </a>
+                        )}
 
                         <AccessControl
-                          role={role}
-                          roles={["ADMIN"]}
-                        >
+  role={role}
+  roles={["SUPER_ADMIN", "ADMIN"]}
+>
                           <AppButton
                             variant="danger"
                             className="px-3 py-2 text-xs"
