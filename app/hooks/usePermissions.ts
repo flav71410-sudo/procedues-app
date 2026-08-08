@@ -3,15 +3,15 @@
 import { useMemo } from "react";
 
 import {
-  AppPermissions,
-  AppRole,
-  getPermissions,
-  normaliserRole,
+  normalizeRole,
+  permissionsForRole,
+  type AppRole,
+  type Permission,
 } from "@/lib/permissions";
 
 type UsePermissionsResult = {
   role: AppRole;
-  permissions: AppPermissions;
+  permissions: readonly Permission[];
   isAdministrateur: boolean;
   isDirection: boolean;
   isPermanent: boolean;
@@ -21,15 +21,16 @@ export function usePermissions(
   roleUtilisateur: string | null | undefined
 ): UsePermissionsResult {
   return useMemo(() => {
-    const role = normaliserRole(roleUtilisateur);
-    const permissions = getPermissions(role);
+    const role = normalizeRole(roleUtilisateur);
+    const permissions = permissionsForRole(role);
 
     return {
       role,
       permissions,
-      isAdministrateur: role === "administrateur",
-      isDirection: role === "direction",
-      isPermanent: role === "permanent",
+      isAdministrateur:
+        role === "SUPER_ADMIN" || role === "ADMIN",
+      isDirection: role === "DM",
+      isPermanent: role === "PERMANENT",
     };
   }, [roleUtilisateur]);
 }
