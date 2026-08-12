@@ -1770,6 +1770,186 @@ export async function getDocumentFolders(
 
 
 /* =========================================================
+   RENOMMAGE DOSSIERS / SOUS-DOSSIERS
+========================================================= */
+
+
+/**
+ * Renomme un dossier pour un magasin précis.
+ *
+ * Important :
+ * - aucune ligne n'est supprimée ;
+ * - aucun fichier Storage n'est déplacé ou supprimé ;
+ * - seuls les champs `dossier` des documents concernés
+ *   sont mis à jour.
+ */
+export async function renameDocumentFolder(
+  ancienNom: string,
+  nouveauNom: string,
+  scope: DocumentScope
+): Promise<void> {
+  try {
+    const ancienDossier =
+      normalizeText(ancienNom);
+
+    const nouveauDossier =
+      normalizeText(nouveauNom);
+
+    if (!ancienDossier) {
+      throw new Error(
+        "Le dossier à renommer est obligatoire."
+      );
+    }
+
+    if (!nouveauDossier) {
+      throw new Error(
+        "Le nouveau nom du dossier est obligatoire."
+      );
+    }
+
+    if (
+      ancienDossier ===
+      nouveauDossier
+    ) {
+      return;
+    }
+
+    /*
+     * Le renommage depuis la vue Tous les magasins
+     * est volontairement interdit pour éviter une
+     * modification globale accidentelle.
+     */
+    if (
+      scope.tousMagasins ||
+      !scope.magasinId
+    ) {
+      throw new Error(
+        "Sélectionne un magasin précis avant de renommer un dossier."
+      );
+    }
+
+    let query = supabase
+      .from("documents")
+      .update({
+        dossier:
+          nouveauDossier,
+      })
+      .eq(
+        "dossier",
+        ancienDossier
+      )
+      .eq(
+        "magasin_id",
+        scope.magasinId
+      );
+
+    const {
+      error,
+    } = await query;
+
+    if (error) {
+      throw error;
+    }
+  } catch (error) {
+    throwDocumentsError(
+      error
+    );
+  }
+}
+
+
+/**
+ * Renomme un sous-dossier à l'intérieur d'un dossier
+ * pour un magasin précis.
+ *
+ * Seuls les documents correspondant au dossier ET au
+ * sous-dossier sélectionnés sont modifiés.
+ */
+export async function renameDocumentSubfolder(
+  dossier: string,
+  ancienNom: string,
+  nouveauNom: string,
+  scope: DocumentScope
+): Promise<void> {
+  try {
+    const dossierNormalise =
+      normalizeText(dossier);
+
+    const ancienSousDossier =
+      normalizeText(ancienNom);
+
+    const nouveauSousDossier =
+      normalizeText(nouveauNom);
+
+    if (!dossierNormalise) {
+      throw new Error(
+        "Le dossier parent est obligatoire."
+      );
+    }
+
+    if (!ancienSousDossier) {
+      throw new Error(
+        "Le sous-dossier à renommer est obligatoire."
+      );
+    }
+
+    if (!nouveauSousDossier) {
+      throw new Error(
+        "Le nouveau nom du sous-dossier est obligatoire."
+      );
+    }
+
+    if (
+      ancienSousDossier ===
+      nouveauSousDossier
+    ) {
+      return;
+    }
+
+    if (
+      scope.tousMagasins ||
+      !scope.magasinId
+    ) {
+      throw new Error(
+        "Sélectionne un magasin précis avant de renommer un sous-dossier."
+      );
+    }
+
+    let query = supabase
+      .from("documents")
+      .update({
+        sous_dossier:
+          nouveauSousDossier,
+      })
+      .eq(
+        "dossier",
+        dossierNormalise
+      )
+      .eq(
+        "sous_dossier",
+        ancienSousDossier
+      )
+      .eq(
+        "magasin_id",
+        scope.magasinId
+      );
+
+    const {
+      error,
+    } = await query;
+
+    if (error) {
+      throw error;
+    }
+  } catch (error) {
+    throwDocumentsError(
+      error
+    );
+  }
+}
+
+
+/* =========================================================
    CATEGORIES
 ========================================================= */
 

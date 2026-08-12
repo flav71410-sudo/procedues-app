@@ -70,6 +70,8 @@ type FormState = {
   rappel_email_delai: number;
   rappel_email_unite: PlanningRappelUnite;
   rappel_email_destinataires: string;
+  alerte_active: boolean;
+  alerte_delai_jours: number;
 };
 
 const CATEGORIES = [
@@ -109,6 +111,8 @@ const FORM_INITIAL: FormState = {
   rappel_email_delai: 1,
   rappel_email_unite: "jour",
   rappel_email_destinataires: "",
+  alerte_active: true,
+  alerte_delai_jours: 7,
 };
 
 function messageErreur(error: unknown): string {
@@ -148,6 +152,10 @@ function toForm(event: PlanningEvent): FormState {
       event.rappel_email_unite ?? "jour",
     rappel_email_destinataires:
       (event.rappel_email_destinataires ?? []).join(", "),
+    alerte_active:
+      event.alerte_active ?? true,
+    alerte_delai_jours:
+      event.alerte_delai_jours ?? 7,
   };
 }
 
@@ -402,6 +410,12 @@ export default function ModifierPlanningPage() {
                 .map((email) => email.trim())
                 .filter(Boolean)
             : null,
+        alerte_active:
+          form.alerte_active,
+        alerte_delai_jours:
+          form.alerte_active
+            ? form.alerte_delai_jours
+            : 7,
       };
 
       const updated =
@@ -856,6 +870,58 @@ export default function ModifierPlanningPage() {
                     },
                   ]}
                 />
+              </div>
+            )}
+          </Section>
+
+          <Section title="Alerte CastoManager">
+            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950/30">
+              <input
+                type="checkbox"
+                checked={form.alerte_active}
+                onChange={(event) =>
+                  setField(
+                    "alerte_active",
+                    event.target.checked
+                  )
+                }
+                className="mt-1 h-4 w-4 rounded border-slate-300"
+              />
+
+              <span>
+                <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                  Afficher une alerte avant l’intervention
+                </span>
+
+                <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">
+                  L’alerte apparaîtra dans le centre de notifications du magasin.
+                </span>
+              </span>
+            </label>
+
+            {form.alerte_active && (
+              <div className="mt-5 max-w-md">
+                <ChampSelect
+                  label="Déclencher l’alerte"
+                  value={String(form.alerte_delai_jours)}
+                  onChange={(value) =>
+                    setField(
+                      "alerte_delai_jours",
+                      Number(value)
+                    )
+                  }
+                  options={[
+                    { value: "1", label: "1 jour avant" },
+                    { value: "2", label: "2 jours avant" },
+                    { value: "3", label: "3 jours avant" },
+                    { value: "5", label: "5 jours avant" },
+                    { value: "7", label: "1 semaine avant" },
+                  ]}
+                />
+
+                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                  Par défaut : 1 semaine avant l’intervention.
+                </p>
               </div>
             )}
           </Section>

@@ -7,6 +7,7 @@ import {
   useState,
 } from "react";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import {
@@ -25,6 +26,7 @@ import {
   List,
   Loader2,
   MoreVertical,
+  Pencil,
   Plus,
   RefreshCw,
   Search,
@@ -46,6 +48,8 @@ import {
   getDocuments,
   getDocumentStats,
   restoreDocument,
+  renameDocumentFolder,
+  renameDocumentSubfolder,
   toggleDocumentFavorite,
   type DocumentFolderNode,
   type DocumentStats,
@@ -66,6 +70,18 @@ type MagasinOption = {
   readonly id: string;
   readonly nom: string;
 };
+
+
+type RenameTarget =
+  | {
+      type: "dossier";
+      dossier: string;
+    }
+  | {
+      type: "sous-dossier";
+      dossier: string;
+      sousDossier: string;
+    };
 
 
 const STATS_VIDES: DocumentStats = {
@@ -257,6 +273,45 @@ function iconeDocument(
 }
 
 
+function BadgeReserve({
+  document,
+}: {
+  document: DocumentItem;
+}) {
+  if (!document.reserve_presente) {
+    return null;
+  }
+
+  if (document.reserve_levee) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
+        <CheckBadgeIcon />
+        Réserve levée
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+      <AlertTriangle className="h-3.5 w-3.5" />
+      Réserve présente
+    </span>
+  );
+}
+
+
+function CheckBadgeIcon() {
+  return (
+    <span
+      aria-hidden="true"
+      className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-600 text-[10px] font-black leading-none text-white"
+    >
+      ✓
+    </span>
+  );
+}
+
+
 /* =========================================================
    PAGE DOCUMENTS
 ========================================================= */
@@ -420,6 +475,29 @@ export default function DocumentsPage() {
         boolean
       >
     >({});
+
+
+  const [
+    renameTarget,
+    setRenameTarget,
+  ] =
+    useState<
+      RenameTarget | null
+    >(null);
+
+
+  const [
+    renameValue,
+    setRenameValue,
+  ] =
+    useState("");
+
+
+  const [
+    renameBusy,
+    setRenameBusy,
+  ] =
+    useState(false);
 
 
   const scope =
@@ -735,6 +813,184 @@ export default function DocumentsPage() {
           true,
       })
     );
+  }
+
+
+  /* =======================================================
+     RENOMMAGE DOSSIERS
+  ======================================================= */
+
+
+  function ouvrirRenommageDossier(
+    dossier: string
+  ) {
+    if (
+      !canEdit ||
+      vueTousMagasins ||
+      !magasinActif?.id
+    ) {
+      setError(
+        "Sélectionne un magasin précis pour renommer un dossier."
+      );
+
+      return;
+    }
+
+    setError(null);
+
+    setRenameTarget({
+      type: "dossier",
+      dossier,
+    });
+
+    setRenameValue(
+      dossier
+    );
+  }
+
+
+  function ouvrirRenommageSousDossier(
+    dossier: string,
+    sousDossier: string
+  ) {
+    if (
+      !canEdit ||
+      vueTousMagasins ||
+      !magasinActif?.id
+    ) {
+      setError(
+        "Sélectionne un magasin précis pour renommer un sous-dossier."
+      );
+
+      return;
+    }
+
+    setError(null);
+
+    setRenameTarget({
+      type:
+        "sous-dossier",
+      dossier,
+      sousDossier,
+    });
+
+    setRenameValue(
+      sousDossier
+    );
+  }
+
+
+  function fermerRenommage() {
+    if (renameBusy) {
+      return;
+    }
+
+    setRenameTarget(
+      null
+    );
+
+    setRenameValue("");
+  }
+
+
+  async function validerRenommage() {
+    if (
+      !renameTarget ||
+      renameBusy
+    ) {
+      return;
+    }
+
+    const nouveauNom =
+      renameValue.trim();
+
+    if (!nouveauNom) {
+      setError(
+        "Le nouveau nom est obligatoire."
+      );
+
+      return;
+    }
+
+    try {
+      setRenameBusy(
+        true
+      );
+
+      setError(null);
+
+      if (
+        renameTarget.type ===
+        "dossier"
+      ) {
+        const ancienNom =
+          renameTarget.dossier;
+
+        await renameDocumentFolder(
+          ancienNom,
+          nouveauNom,
+          scope
+        );
+
+        setFilters(
+          (current) => ({
+            ...current,
+
+            dossier:
+              current.dossier ===
+              ancienNom
+                ? nouveauNom
+                : current.dossier,
+          })
+        );
+      } else {
+        const ancienNom =
+          renameTarget.sousDossier;
+
+        await renameDocumentSubfolder(
+          renameTarget.dossier,
+          ancienNom,
+          nouveauNom,
+          scope
+        );
+
+        setFilters(
+          (current) => ({
+            ...current,
+
+            sousDossier:
+              current.dossier ===
+                renameTarget.dossier &&
+              current.sousDossier ===
+                ancienNom
+                ? nouveauNom
+                : current.sousDossier,
+          })
+        );
+      }
+
+      setRenameTarget(
+        null
+      );
+
+      setRenameValue("");
+
+      await charger(
+        true
+      );
+    } catch (
+      currentError
+    ) {
+      setError(
+        messageErreur(
+          currentError
+        )
+      );
+    } finally {
+      setRenameBusy(
+        false
+      );
+    }
   }
 
 
@@ -1095,33 +1351,31 @@ export default function DocumentsPage() {
 
 
           {canCreate && (
-            <button
-              type="button"
-
-              onClick={() => {
-                if (
-                  vueTousMagasins ||
-                  !magasinActif
-                ) {
-                  setError(
-                    "Sélectionne un magasin précis avant d’ajouter un document."
-                  );
-
-                  return;
-                }
-
-
-                router.push(
-                  "/documents/nouveau"
-                );
-              }}
-
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white transition hover:bg-blue-700"
-            >
-              <Plus className="h-5 w-5" />
-
-              Nouveau document
-            </button>
+            <>
+              {vueTousMagasins ||
+              !magasinActif?.id ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setError(
+                      "Sélectionne un magasin précis avant d’ajouter un document."
+                    )
+                  }
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white transition hover:bg-blue-700"
+                >
+                  <Plus className="h-5 w-5" />
+                  Nouveau document
+                </button>
+              ) : (
+                <Link
+                  href="/documents/nouveau"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white transition hover:bg-blue-700"
+                >
+                  <Plus className="h-5 w-5" />
+                  Nouveau document
+                </Link>
+              )}
+            </>
           )}
 
         </header>
@@ -1516,63 +1770,86 @@ export default function DocumentsPage() {
                       }
                     >
 
-                      <button
-                        type="button"
+                      <div className="flex items-center gap-1">
 
-                        onClick={() => {
-                          choisirDossier(
-                            folder.dossier
-                          );
+                        <button
+                          type="button"
+
+                          onClick={() => {
+                            choisirDossier(
+                              folder.dossier
+                            );
 
 
-                          setDossiersOuverts(
-                            (
-                              current
-                            ) => ({
-                              ...current,
+                            setDossiersOuverts(
+                              (
+                                current
+                              ) => ({
+                                ...current,
 
-                              [folder.dossier]:
-                                !opened,
-                            })
-                          );
-                        }}
+                                [folder.dossier]:
+                                  !opened,
+                              })
+                            );
+                          }}
 
-                        className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-medium transition ${
-                          active
-                            ? "bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
-                            : "text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
-                        }`}
-                      >
+                          className={`flex min-w-0 flex-1 items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-medium transition ${
+                            active
+                              ? "bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+                              : "text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                          }`}
+                        >
 
-                        {folder.sousDossiers.length >
-                        0 ? (
-                          opened ? (
-                            <ChevronDown className="h-4 w-4 shrink-0" />
+                          {folder.sousDossiers.length >
+                          0 ? (
+                            opened ? (
+                              <ChevronDown className="h-4 w-4 shrink-0" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4 shrink-0" />
+                            )
                           ) : (
-                            <ChevronRight className="h-4 w-4 shrink-0" />
-                          )
-                        ) : (
-                          <span className="w-4" />
-                        )}
+                            <span className="w-4" />
+                          )}
 
 
-                        {opened ? (
-                          <FolderOpen className="h-5 w-5 shrink-0 text-amber-500" />
-                        ) : (
-                          <Folder className="h-5 w-5 shrink-0 text-amber-500" />
-                        )}
+                          {opened ? (
+                            <FolderOpen className="h-5 w-5 shrink-0 text-amber-500" />
+                          ) : (
+                            <Folder className="h-5 w-5 shrink-0 text-amber-500" />
+                          )}
 
 
-                        <span className="min-w-0 flex-1 truncate">
-                          {folder.dossier}
-                        </span>
+                          <span className="min-w-0 flex-1 truncate">
+                            {folder.dossier}
+                          </span>
 
 
-                        <span className="text-xs text-slate-400">
-                          {folder.total}
-                        </span>
+                          <span className="text-xs text-slate-400">
+                            {folder.total}
+                          </span>
 
-                      </button>
+                        </button>
+
+
+                        {canEdit &&
+                          !vueTousMagasins &&
+                          magasinActif?.id && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                ouvrirRenommageDossier(
+                                  folder.dossier
+                                )
+                              }
+                              title="Renommer le dossier"
+                              aria-label={`Renommer le dossier ${folder.dossier}`}
+                              className="shrink-0 rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-blue-600 dark:hover:bg-slate-800 dark:hover:text-blue-400"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </button>
+                          )}
+
+                      </div>
 
 
                       {opened &&
@@ -1584,37 +1861,62 @@ export default function DocumentsPage() {
                               (
                                 sousDossier
                               ) => (
-                                <button
+                                <div
                                   key={
                                     sousDossier
                                   }
-
-                                  type="button"
-
-                                  onClick={() =>
-                                    choisirDossier(
-                                      folder.dossier,
-                                      sousDossier
-                                    )
-                                  }
-
-                                  className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition ${
-                                    filters.dossier ===
-                                      folder.dossier &&
-                                    filters.sousDossier ===
-                                      sousDossier
-                                      ? "bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
-                                      : "text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
-                                  }`}
+                                  className="flex items-center gap-1"
                                 >
 
-                                  <Folder className="h-4 w-4 text-amber-500" />
+                                  <button
+                                    type="button"
 
-                                  <span className="truncate">
-                                    {sousDossier}
-                                  </span>
+                                    onClick={() =>
+                                      choisirDossier(
+                                        folder.dossier,
+                                        sousDossier
+                                      )
+                                    }
 
-                                </button>
+                                    className={`flex min-w-0 flex-1 items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition ${
+                                      filters.dossier ===
+                                        folder.dossier &&
+                                      filters.sousDossier ===
+                                        sousDossier
+                                        ? "bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+                                        : "text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+                                    }`}
+                                  >
+
+                                    <Folder className="h-4 w-4 shrink-0 text-amber-500" />
+
+                                    <span className="min-w-0 flex-1 truncate">
+                                      {sousDossier}
+                                    </span>
+
+                                  </button>
+
+
+                                  {canEdit &&
+                                    !vueTousMagasins &&
+                                    magasinActif?.id && (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          ouvrirRenommageSousDossier(
+                                            folder.dossier,
+                                            sousDossier
+                                          )
+                                        }
+                                        title="Renommer le sous-dossier"
+                                        aria-label={`Renommer le sous-dossier ${sousDossier}`}
+                                        className="shrink-0 rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-blue-600 dark:hover:bg-slate-800 dark:hover:text-blue-400"
+                                      >
+                                        <Pencil className="h-3.5 w-3.5" />
+                                      </button>
+                                    )}
+
+                                </div>
                               )
                             )}
 
@@ -1783,6 +2085,128 @@ export default function DocumentsPage() {
         </section>
 
       </div>
+
+
+      {renameTarget && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-4"
+          onMouseDown={(
+            event
+          ) => {
+            if (
+              event.target ===
+              event.currentTarget
+            ) {
+              fermerRenommage();
+            }
+          }}
+        >
+          <div className="w-full max-w-md rounded-2xl bg-slate-900 p-6 shadow-2xl">
+
+            <h2 className="text-xl font-bold text-white">
+              {renameTarget.type ===
+              "dossier"
+                ? "Renommer le dossier"
+                : "Renommer le sous-dossier"}
+            </h2>
+
+
+            <p className="mt-3 text-sm text-slate-300">
+              {renameTarget.type ===
+              "dossier"
+                ? "Tous les documents de ce dossier dans le magasin sélectionné seront rattachés au nouveau nom."
+                : `Tous les documents de « ${renameTarget.sousDossier} » dans le dossier « ${renameTarget.dossier} » seront rattachés au nouveau nom.`}
+            </p>
+
+
+            <label className="mt-5 block">
+
+              <span className="mb-2 block text-sm font-semibold text-slate-200">
+                Nouveau nom
+              </span>
+
+
+              <input
+                type="text"
+                value={
+                  renameValue
+                }
+                onChange={(
+                  event
+                ) =>
+                  setRenameValue(
+                    event.target.value
+                  )
+                }
+                onKeyDown={(
+                  event
+                ) => {
+                  if (
+                    event.key ===
+                    "Enter"
+                  ) {
+                    event.preventDefault();
+
+                    void validerRenommage();
+                  }
+
+                  if (
+                    event.key ===
+                    "Escape"
+                  ) {
+                    fermerRenommage();
+                  }
+                }}
+                autoFocus
+                disabled={
+                  renameBusy
+                }
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 disabled:opacity-60"
+              />
+
+            </label>
+
+
+            <div className="mt-7 flex justify-end gap-3">
+
+              <button
+                type="button"
+                onClick={
+                  fermerRenommage
+                }
+                disabled={
+                  renameBusy
+                }
+                className="rounded-xl bg-slate-700 px-4 py-2 font-medium text-white transition hover:bg-slate-600 disabled:opacity-60"
+              >
+                Annuler
+              </button>
+
+
+              <button
+                type="button"
+                onClick={() =>
+                  void validerRenommage()
+                }
+                disabled={
+                  renameBusy ||
+                  !renameValue.trim()
+                }
+                className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 font-semibold text-white transition hover:bg-blue-700 disabled:opacity-60"
+              >
+                {renameBusy && (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                )}
+
+                Renommer
+              </button>
+
+            </div>
+
+          </div>
+        </div>
+      )}
+
     </AppShell>
   );
 }
@@ -1946,6 +2370,14 @@ function DocumentList({
                       <p className="max-w-72 truncate text-xs text-slate-500">
                         {document.fichier_nom}
                       </p>
+
+                      {document.reserve_presente && (
+                        <div className="mt-2">
+                          <BadgeReserve
+                            document={document}
+                          />
+                        </div>
+                      )}
 
                     </div>
 
@@ -2332,6 +2764,14 @@ function DocumentGrid({
                   <p className="mt-1 truncate text-xs text-slate-500">
                     {document.fichier_nom}
                   </p>
+
+                  {document.reserve_presente && (
+                    <div className="mt-2">
+                      <BadgeReserve
+                        document={document}
+                      />
+                    </div>
+                  )}
 
                 </div>
 

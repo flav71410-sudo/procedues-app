@@ -234,10 +234,7 @@ const peutSupprimerPlan = [
       return;
     }
 
-    if (
-      vueTousMagasins ||
-      !magasinActif
-    ) {
+    if (vueTousMagasins || !magasinActif?.id) {
       toast.warning(
         "Magasin requis",
         "Sélectionne un magasin précis avant d’ajouter un plan."
@@ -255,16 +252,25 @@ const peutSupprimerPlan = [
 
     if (!fichier) {
       toast.warning(
-        "Image manquante",
-        "Sélectionne une image du plan."
+        "Fichier manquant",
+        "Sélectionne un plan au format PNG."
       );
       return;
     }
 
-    if (!fichier.type.startsWith("image/")) {
+    const fichierSelectionne = fichier;
+    const magasinId = magasinActif.id;
+
+    const estPng =
+      fichierSelectionne.type === "image/png" &&
+      fichierSelectionne.name
+        .toLowerCase()
+        .endsWith(".png");
+
+    if (!estPng) {
       toast.warning(
-        "Fichier non valide",
-        "Le fichier sélectionné doit être une image."
+        "Format non autorisé",
+        "Le plan doit obligatoirement être au format PNG."
       );
       return;
     }
@@ -273,52 +279,49 @@ const peutSupprimerPlan = [
       setLoading(true);
       setErreur(null);
 
-      const extension =
-        fichier.name
-          .split(".")
-          .pop()
-          ?.toLowerCase()
-          .replace(/[^a-z0-9]/g, "") ||
-        "jpg";
-
       const safeName =
-        nettoyerNomFichier(fichier.name) ||
-        "plan";
+        nettoyerNomFichier(
+          fichierSelectionne.name
+        ) || "plan";
 
       const filePath = [
-        magasinActif.id,
+        magasinId,
         String(new Date().getFullYear()),
-        `${Date.now()}-${safeName}.${extension}`,
+        `${Date.now()}-${safeName}.png`,
       ].join("/");
 
       const { error: uploadError } =
         await supabase.storage
           .from("plans")
-          .upload(filePath, fichier, {
-            cacheControl: "3600",
-            upsert: false,
-            contentType: fichier.type,
-          });
+          .upload(
+            filePath,
+            fichierSelectionne,
+            {
+              cacheControl: "3600",
+              upsert: false,
+              contentType: "image/png",
+            }
+          );
 
       if (uploadError) {
         throw uploadError;
       }
 
       const dimensions =
-        await lireDimensionsImage(fichier);
+        await lireDimensionsImage(
+          fichierSelectionne
+        );
 
       try {
         await createPlan({
           nom: nom.trim(),
-          // Bucket privé : on conserve le chemin,
-          // l'URL d'affichage sera signée au chargement.
           image_url: filePath,
           image_path: filePath,
           largeur:
             dimensions?.largeur ?? null,
           hauteur:
             dimensions?.hauteur ?? null,
-          magasin_id: magasinActif.id,
+          magasin_id: magasinId,
         });
       } catch (insertError) {
         await supabase.storage
@@ -558,11 +561,15 @@ const peutSupprimerPlan = [
               Image du plan
             </label>
 
+            <p className="text-xs font-semibold text-amber-600 dark:text-amber-400">
+              Format accepté : PNG uniquement
+            </p>
+
             <input
               ref={fileInputRef}
               id="plan-file"
               type="file"
-              accept="image/png,image/jpeg,image/webp"
+              accept="image/png,.png"
               onChange={(event) =>
                 setFichier(
                   event.target.files?.[0] ?? null

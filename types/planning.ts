@@ -44,6 +44,8 @@ export interface PlanningEvent {
   rappel_email_unite: PlanningRappelUnite | null;
   rappel_email_destinataires: string[] | null;
   rappel_email_dernier_envoi: string | null;
+  alerte_active: boolean;
+  alerte_delai_jours: number;
   actif: boolean;
   created_at: string;
   updated_at: string;
@@ -77,4 +79,6 @@ export interface PlanningCreateInput {
   rappel_email_delai?: number | null;
   rappel_email_unite?: PlanningRappelUnite | null;
   rappel_email_destinataires?: string[] | null;
+  alerte_active?: boolean;
+  alerte_delai_jours?: number;
 }

@@ -388,6 +388,12 @@ export async function getDashboardData(
   );
 
   const aujourdHui = dateLocaleIso();
+
+  // Fenêtre d'alerte Planning : de J à J+7 inclus.
+  const dansSeptJoursDate = new Date();
+  dansSeptJoursDate.setDate(dansSeptJoursDate.getDate() + 7);
+  const dansSeptJours = dateLocaleIso(dansSeptJoursDate);
+
   const { debut: debutSemaine, fin: finSemaine } = debutFinSemaine();
   const dansTrenteJoursDate = new Date();
   dansTrenteJoursDate.setDate(dansTrenteJoursDate.getDate() + 30);
@@ -399,6 +405,13 @@ export async function getDashboardData(
 
   const planningRetard = planningActif.filter((e) => e.date_evenement < aujourdHui);
   const planningAujourdHui = planningActif.filter((e) => e.date_evenement === aujourdHui);
+
+  const planningDansSeptJours = planningActif.filter(
+    (e) =>
+      e.date_evenement > aujourdHui &&
+      e.date_evenement <= dansSeptJours
+  );
+
   const planningSemaine = planningActif.filter(
     (e) => e.date_evenement >= debutSemaine && e.date_evenement <= finSemaine
   );
@@ -444,6 +457,16 @@ export async function getDashboardData(
   });
 
   const devisSignes = devis.filter((d) => d.devis_signe).length;
+
+  function nombreJoursAvant(dateEvenement: string) {
+    const debut = new Date(`${aujourdHui}T12:00:00`);
+    const fin = new Date(`${dateEvenement}T12:00:00`);
+
+    return Math.round(
+      (fin.getTime() - debut.getTime()) /
+        (1000 * 60 * 60 * 24)
+    );
+  }
 
   const alertes: DashboardAlert[] = [];
 
@@ -503,7 +526,10 @@ export async function getDashboardData(
       title: `${planningRetard.length} événement${planningRetard.length > 1 ? "s" : ""} planning en retard`,
       description: "Des événements planifiés ont dépassé leur date sans être terminés.",
       level: "urgent",
-      href: "/planning",
+      href:
+        planningRetard.length === 1
+          ? `/planning/${planningRetard[0].id}`
+          : "/planning",
     });
   }
 
@@ -511,11 +537,41 @@ export async function getDashboardData(
     alertes.push({
       id: "planning-aujourdhui",
       title: `${planningAujourdHui.length} intervention${planningAujourdHui.length > 1 ? "s" : ""} aujourd’hui`,
-      description: "Consulte le planning pour organiser la journée.",
-      level: "warning",
-      href: "/planning",
+      description:
+        planningAujourdHui.length === 1
+          ? planningAujourdHui[0].titre
+          : "Consulte le planning pour organiser la journée.",
+      level: "urgent",
+      href:
+        planningAujourdHui.length === 1
+          ? `/planning/${planningAujourdHui[0].id}`
+          : "/planning",
     });
   }
+
+  /*
+   * Alertes préventives Planning :
+   * chaque intervention apparaît à partir de J-7.
+   */
+  planningDansSeptJours
+    .slice()
+    .sort((a, b) =>
+      a.date_evenement.localeCompare(b.date_evenement)
+    )
+    .forEach((event) => {
+      const jours = nombreJoursAvant(event.date_evenement);
+
+      alertes.push({
+        id: `planning-j7-${event.id}`,
+        title:
+          jours === 1
+            ? "Intervention prévue demain"
+            : `Intervention prévue dans ${jours} jours`,
+        description: `${event.titre} · ${formatDateCourte(event.date_evenement)}`,
+        level: "warning",
+        href: `/planning/${event.id}`,
+      });
+    });
 
   if (equipementsHorsService.length > 0) {
     alertes.push({
@@ -564,7 +620,7 @@ export async function getDashboardData(
         titre: d.titre,
         sousTitre: `${d.prestataire ?? "Sans prestataire"} · ${formatMontant(d.montant_ht)} HT`,
         badge: "Devis à valider",
-        href: `/documents/${d.id}`,
+        href: "/investissements",
         niveau: "warning" as const,
       })),
     ...planningRetard.slice(0, 3).map((e) => ({
@@ -572,7 +628,7 @@ export async function getDashboardData(
       titre: e.titre,
       sousTitre: `Prévu le ${formatDateCourte(e.date_evenement)}`,
       badge: "Planning en retard",
-      href: "/planning",
+      href: `/planning/${e.id}`,
       niveau: "urgent" as const,
     })),
   ].slice(0, 8);
@@ -586,7 +642,7 @@ export async function getDashboardData(
       titre: e.titre,
       sousTitre: `${formatDateCourte(e.date_evenement)}${e.heure_debut ? ` · ${e.heure_debut.slice(0, 5)}` : ""}`,
       badge: e.categorie,
-      href: "/planning",
+      href: `/planning/${e.id}`,
       niveau: normaliserValeur(e.priorite).includes("urgent") ? "warning" as const : "info" as const,
     }));
 
@@ -615,7 +671,7 @@ export async function getDashboardData(
       titre: d.titre,
       sousTitre: `${d.prestataire ?? "Sans prestataire"} · ${formatMontant(d.montant_ht)} HT`,
       badge: d.statut_devis === "EN_ATTENTE" ? "À valider" : "À signer",
-      href: `/documents/${d.id}`,
+      href: "/investissements",
       niveau: d.statut_devis === "EN_ATTENTE" ? "warning" as const : "info" as const,
     }));
 

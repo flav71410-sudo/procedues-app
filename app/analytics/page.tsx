@@ -631,10 +631,10 @@ export default function AnalyticsPage() {
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <h2 className="font-black text-slate-900 dark:text-white">
-                    Synthèse des risques
+                    Liste des devis
                   </h2>
                   <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    Points nécessitant une attention prioritaire.
+                    Devis et investissements nécessitant un suivi ou un arbitrage.
                   </p>
                 </div>
                 <AlertTriangle className="h-5 w-5 text-red-500" />
@@ -650,7 +650,7 @@ export default function AnalyticsPage() {
                   pilotage.priorites.slice(0, 8).map((item) => (
                     <Link
                       key={item.id}
-                      href={item.href}
+                      href="/investissements"
                       className="rounded-xl border border-slate-200 p-4 transition hover:border-blue-300 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-950"
                     >
                       <div className="flex items-start justify-between gap-3">

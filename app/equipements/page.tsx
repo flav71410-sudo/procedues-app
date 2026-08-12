@@ -12,6 +12,7 @@ import {
   Building2,
   CheckCircle2,
   Eye,
+  Layers3,
   Loader2,
   Package,
   Plus,
@@ -64,6 +65,7 @@ type Equipement = {
   type_id: string | null;
   secteur_id: string | null;
   prestataire_id: string | null;
+  lot: string | null;
   magasin_id: string;
   created_at: string | null;
 };
@@ -162,12 +164,24 @@ export default function EquipementsPage() {
   const [recherche, setRecherche] = useState("");
   const [filtreType, setFiltreType] = useState("Tous");
   const [filtreSecteur, setFiltreSecteur] = useState("Tous");
+  const [filtreLot, setFiltreLot] = useState("Tous");
   const [filtreEtat, setFiltreEtat] = useState("Tous");
 
   const [chargement, setChargement] = useState(true);
   const [actualisation, setActualisation] = useState(false);
   const [suppressionId, setSuppressionId] =
     useState<string | null>(null);
+
+  const [selectionEquipements, setSelectionEquipements] =
+    useState<string[]>([]);
+
+  const [selectionImpression, setSelectionImpression] =
+    useState<string[]>([]);
+  const [lotAffectation, setLotAffectation] = useState("");
+  const [nouveauLotAffectation, setNouveauLotAffectation] =
+    useState("");
+  const [affectationLotBusy, setAffectationLotBusy] =
+    useState(false);
 
   const [maintenanceBloquante, setMaintenanceBloquante] =
     useState<{
@@ -219,6 +233,7 @@ export default function EquipementsPage() {
               type_id,
               secteur_id,
               prestataire_id,
+              lot,
               magasin_id,
               created_at
             `
@@ -364,6 +379,7 @@ export default function EquipementsPage() {
           typeNom,
           secteurNom,
           prestataireNom,
+          equipement.lot,
         ].join(" ")
       );
 
@@ -378,22 +394,39 @@ export default function EquipementsPage() {
         filtreSecteur === "Tous" ||
         equipement.secteur_id === filtreSecteur;
 
+      const lotOk =
+        filtreLot === "Tous" ||
+        (equipement.lot ?? "") === filtreLot;
+
       const etatOk =
         filtreEtat === "Tous" ||
         equipement.etat === filtreEtat;
 
-      return rechercheOk && typeOk && secteurOk && etatOk;
+      return rechercheOk && typeOk && secteurOk && lotOk && etatOk;
     });
   }, [
     equipements,
     filtreEtat,
     filtreSecteur,
+    filtreLot,
     filtreType,
     prestataireMap,
     recherche,
     secteurMap,
     typeMap,
   ]);
+
+  const lotsDisponibles = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          equipements
+            .map((item) => item.lot?.trim() ?? "")
+            .filter(Boolean)
+        )
+      ).sort((a, b) => a.localeCompare(b, "fr")),
+    [equipements]
+  );
 
   const statistiques = useMemo(() => {
     const enService = equipements.filter(
@@ -418,6 +451,137 @@ export default function EquipementsPage() {
       aControler,
     };
   }, [equipements]);
+
+  function basculerSelectionEquipement(id: string) {
+    setSelectionEquipements((actuel) =>
+      actuel.includes(id)
+        ? actuel.filter((item) => item !== id)
+        : [...actuel, id]
+    );
+  }
+
+  function basculerSelectionTousFiltres() {
+    const ids = equipementsFiltres.map((item) => item.id);
+    const tousSelectionnes =
+      ids.length > 0 &&
+      ids.every((id) => selectionEquipements.includes(id));
+
+    setSelectionEquipements((actuel) => {
+      if (tousSelectionnes) {
+        return actuel.filter((id) => !ids.includes(id));
+      }
+
+      return Array.from(new Set([...actuel, ...ids]));
+    });
+  }
+
+  function basculerSelectionImpression(id: string) {
+    setSelectionImpression((actuel) =>
+      actuel.includes(id)
+        ? actuel.filter((item) => item !== id)
+        : [...actuel, id]
+    );
+  }
+
+  function basculerTousImpressionFiltres() {
+    const ids = equipementsFiltres.map(
+      (item) => item.id
+    );
+
+    const tousSelectionnes =
+      ids.length > 0 &&
+      ids.every((id) =>
+        selectionImpression.includes(id)
+      );
+
+    setSelectionImpression((actuel) => {
+      if (tousSelectionnes) {
+        return actuel.filter(
+          (id) => !ids.includes(id)
+        );
+      }
+
+      return Array.from(
+        new Set([...actuel, ...ids])
+      );
+    });
+  }
+
+  const equipementsAImprimer =
+    selectionImpression.length > 0
+      ? equipementsFiltres.filter(
+          (item) =>
+            selectionImpression.includes(
+              item.id
+            )
+        )
+      : equipementsFiltres;
+
+  async function affecterSelectionAuLot() {
+    if (selectionEquipements.length === 0) {
+      setErreur("Sélectionne au moins un équipement.");
+      return;
+    }
+
+    if (vueTousMagasins || !magasinActif?.id) {
+      setErreur(
+        "Sélectionne un magasin précis avant d’affecter des équipements à un lot."
+      );
+      return;
+    }
+
+    const lotFinal =
+      lotAffectation === "__NOUVEAU__"
+        ? nouveauLotAffectation.trim()
+        : lotAffectation.trim();
+
+    try {
+      setAffectationLotBusy(true);
+      setErreur(null);
+      setSucces(null);
+
+      let requete = supabase
+        .from("equipements")
+        .update({
+          lot: lotFinal || null,
+        })
+        .in("id", selectionEquipements)
+        .eq("magasin_id", magasinActif.id);
+
+      const { error } = await requete;
+
+      if (error) {
+        throw error;
+      }
+
+      setEquipements((actuel) =>
+        actuel.map((item) =>
+          selectionEquipements.includes(item.id)
+            ? {
+                ...item,
+                lot: lotFinal || null,
+              }
+            : item
+        )
+      );
+
+      setSelectionEquipements([]);
+      setLotAffectation("");
+      setNouveauLotAffectation("");
+
+      setSucces(
+        lotFinal
+          ? `Équipement(s) affecté(s) au lot « ${lotFinal} ».`
+          : "Équipement(s) retiré(s) de leur lot."
+      );
+    } catch (error) {
+      setErreur(
+        `Impossible d’affecter le lot : ${erreurLisible(error)}`
+      );
+    } finally {
+      setAffectationLotBusy(false);
+    }
+  }
 
   function ouvrirCreation() {
     if (vueTousMagasins || !magasinActif) {
@@ -596,7 +760,9 @@ if (!data || data.length === 0) {
               onClick={imprimerListe}
             >
               <Printer size={17} />
-              Imprimer
+              {selectionImpression.length > 0
+                ? `Imprimer (${selectionImpression.length})`
+                : "Imprimer tout"}
             </AppButton>
 
             {canCreate && (
@@ -614,6 +780,27 @@ if (!data || data.length === 0) {
           }
 
           @media print {
+          html,
+body,
+#__next,
+main,
+main > div {
+  overflow: visible !important;
+  overflow-x: visible !important;
+  overflow-y: visible !important;
+  height: auto !important;
+  max-height: none !important;
+}
+
+::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+* {
+  scrollbar-width: none !important;
+}
             @page {
               size: A4 landscape;
               margin: 10mm;
@@ -629,6 +816,30 @@ if (!data || data.length === 0) {
             header,
             button,
             .equipements-no-print {
+              display: none !important;
+            }
+
+            body > div,
+            #__next,
+            main,
+            main > div {
+              width: 100% !important;
+              max-width: none !important;
+            }
+
+            .equipements-print-table {
+              width: 100% !important;
+              overflow: visible !important;
+            }
+
+            .equipements-print-table table {
+              table-layout: fixed !important;
+            }
+
+            .equipements-print-table th:last-child,
+            .equipements-print-table td:last-child,
+            .equipements-print-table th:first-child,
+            .equipements-print-table td:first-child {
               display: none !important;
             }
 
@@ -678,8 +889,8 @@ if (!data || data.length === 0) {
                 LISTE DES ÉQUIPEMENTS
               </p>
               <p className="text-sm">
-                {equipementsFiltres.length} équipement
-                {equipementsFiltres.length > 1 ? "s" : ""}
+                {equipementsAImprimer.length} équipement
+                {equipementsAImprimer.length > 1 ? "s" : ""}
               </p>
             </div>
           </div>
@@ -807,7 +1018,7 @@ if (!data || data.length === 0) {
         </section>
 
         <AppCard>
-          <div className="grid gap-4 xl:grid-cols-[minmax(260px,1fr)_240px_240px_220px]">
+          <div className="grid gap-4 xl:grid-cols-[minmax(260px,1fr)_220px_220px_220px_220px]">
             <div className="relative">
               <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
 
@@ -858,6 +1069,23 @@ if (!data || data.length === 0) {
             />
 
             <AppSelect
+              value={filtreLot}
+              onChange={(event) =>
+                setFiltreLot(event.target.value)
+              }
+              options={[
+                {
+                  value: "Tous",
+                  label: "Tous les lots",
+                },
+                ...lotsDisponibles.map((lot) => ({
+                  value: lot,
+                  label: lot,
+                })),
+              ]}
+            />
+
+            <AppSelect
               value={filtreEtat}
               onChange={(event) =>
                 setFiltreEtat(event.target.value)
@@ -891,6 +1119,83 @@ if (!data || data.length === 0) {
             />
           </div>
         </AppCard>
+
+        {!vueTousMagasins && magasinActif && (
+          <AppCard>
+            <div className="flex flex-col gap-4">
+              <div className="flex items-start gap-3">
+                <div className="rounded-xl bg-violet-100 p-3 text-violet-700 dark:bg-violet-950 dark:text-violet-300">
+                  <Layers3 className="h-5 w-5" />
+                </div>
+
+                <div>
+                  <h2 className="font-bold text-slate-900 dark:text-white">
+                    Affecter des équipements à un lot
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Sélectionne les équipements dans la liste puis choisis un lot existant ou crée-en un nouveau.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid gap-3 lg:grid-cols-[220px_1fr_auto]">
+                <AppSelect
+                  value={lotAffectation}
+                  onChange={(event) => {
+                    setLotAffectation(event.target.value);
+
+                    if (event.target.value !== "__NOUVEAU__") {
+                      setNouveauLotAffectation("");
+                    }
+                  }}
+                  options={[
+                    {
+                      value: "",
+                      label: "Retirer du lot",
+                    },
+                    ...lotsDisponibles.map((lot) => ({
+                      value: lot,
+                      label: lot,
+                    })),
+                    {
+                      value: "__NOUVEAU__",
+                      label: "+ Nouveau lot",
+                    },
+                  ]}
+                />
+
+                {lotAffectation === "__NOUVEAU__" ? (
+                  <AppInput
+                    value={nouveauLotAffectation}
+                    onChange={(event) =>
+                      setNouveauLotAffectation(event.target.value)
+                    }
+                    placeholder="Nom du nouveau lot..."
+                  />
+                ) : (
+                  <div className="flex items-center rounded-xl border border-slate-200 px-4 text-sm text-slate-500 dark:border-slate-800">
+                    {selectionEquipements.length} équipement
+                    {selectionEquipements.length > 1 ? "s" : ""} sélectionné
+                    {selectionEquipements.length > 1 ? "s" : ""}
+                  </div>
+                )}
+
+                <AppButton
+                  loading={affectationLotBusy}
+                  disabled={
+                    selectionEquipements.length === 0 ||
+                    affectationLotBusy ||
+                    (lotAffectation === "__NOUVEAU__" &&
+                      !nouveauLotAffectation.trim())
+                  }
+                  onClick={() => void affecterSelectionAuLot()}
+                >
+                  Affecter
+                </AppButton>
+              </div>
+            </div>
+          </AppCard>
+        )}
         </div>
 
 
@@ -921,13 +1226,53 @@ if (!data || data.length === 0) {
           />
         ) : (
           <>
+            <div className="equipements-no-print mb-4 grid gap-3 lg:grid-cols-2">
+              <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                  Affectation aux lots
+                </p>
+                <button
+                  type="button"
+                  onClick={basculerSelectionTousFiltres}
+                  className="mt-2 text-sm font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                >
+                  Sélectionner / désélectionner tous les équipements affichés
+                </button>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                  Impression
+                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={basculerTousImpressionFiltres}
+                    className="text-sm font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                  >
+                    Sélectionner / désélectionner tous pour impression
+                  </button>
+
+                  {selectionImpression.length > 0 && (
+                    <span className="text-sm text-slate-500 dark:text-slate-400">
+                      {selectionImpression.length} sélectionné
+                      {selectionImpression.length > 1 ? "s" : ""}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
             <div className="equipements-print-table hidden xl:block">
               <AppTable
                 headers={[
+                  "Impression",
+                  "Sélection lot",
                   "N°",
                   "Désignation",
                   "Type",
                   "Secteur",
+                  "Lot",
                   "Emplacement",
                   "Prestataire",
                   "État",
@@ -939,8 +1284,48 @@ if (!data || data.length === 0) {
                   (equipement) => (
                     <tr
                       key={equipement.id}
-                      className="border-t border-slate-200 dark:border-slate-800"
+                      className={[
+                        "border-t border-slate-200 dark:border-slate-800",
+                        selectionImpression.length > 0 &&
+                        !selectionImpression.includes(
+                          equipement.id
+                        )
+                          ? "print:hidden"
+                          : "",
+                      ].join(" ")}
                     >
+                      <td className="equipements-no-print px-6 py-4">
+                        <input
+                          type="checkbox"
+                          checked={selectionImpression.includes(
+                            equipement.id
+                          )}
+                          onChange={() =>
+                            basculerSelectionImpression(
+                              equipement.id
+                            )
+                          }
+                          className="h-4 w-4 rounded border-slate-300"
+                          aria-label={`Imprimer ${equipement.numero}`}
+                        />
+                      </td>
+
+                      <td className="equipements-no-print px-6 py-4">
+                        <input
+                          type="checkbox"
+                          checked={selectionEquipements.includes(
+                            equipement.id
+                          )}
+                          onChange={() =>
+                            basculerSelectionEquipement(
+                              equipement.id
+                            )
+                          }
+                          className="h-4 w-4 rounded border-slate-300"
+                          aria-label={`Sélectionner ${equipement.numero}`}
+                        />
+                      </td>
+
                       <td className="px-6 py-4 font-bold text-slate-900 dark:text-white">
                         {equipement.numero}
                       </td>
@@ -963,6 +1348,10 @@ if (!data || data.length === 0) {
                               equipement.secteur_id
                             ) ?? "Non défini"
                           : "Non défini"}
+                      </td>
+
+                      <td className="px-6 py-4 text-slate-700 dark:text-slate-300">
+                        {equipement.lot ?? "—"}
                       </td>
 
                       <td className="px-6 py-4 text-slate-700 dark:text-slate-300">
@@ -1044,6 +1433,39 @@ if (!data || data.length === 0) {
                 (equipement) => (
                   <AppCard key={equipement.id}>
                     <div className="flex flex-col gap-4">
+                      <div className="equipements-no-print flex flex-wrap gap-4">
+                        <label className="flex items-center gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">
+                          <input
+                            type="checkbox"
+                            checked={selectionImpression.includes(
+                              equipement.id
+                            )}
+                            onChange={() =>
+                              basculerSelectionImpression(
+                                equipement.id
+                              )
+                            }
+                            className="h-4 w-4 rounded border-slate-300"
+                          />
+                          Imprimer
+                        </label>
+
+                        <label className="flex items-center gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">
+                          <input
+                            type="checkbox"
+                            checked={selectionEquipements.includes(
+                              equipement.id
+                            )}
+                            onChange={() =>
+                              basculerSelectionEquipement(
+                                equipement.id
+                              )
+                            }
+                            className="h-4 w-4 rounded border-slate-300"
+                          />
+                          Affecter à un lot
+                        </label>
+                      </div>
                       <div className="flex items-start justify-between gap-4">
                         <div className="min-w-0">
                           <p className="text-xs font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-400">
@@ -1089,6 +1511,15 @@ if (!data || data.length === 0) {
                                   equipement.secteur_id
                                 ) ?? "Non défini"
                               : "Non défini"}
+                          </dd>
+                        </div>
+
+                        <div>
+                          <dt className="text-slate-500 dark:text-slate-400">
+                            Lot
+                          </dt>
+                          <dd className="mt-1 font-medium text-slate-900 dark:text-white">
+                            {equipement.lot ?? "—"}
                           </dd>
                         </div>
 

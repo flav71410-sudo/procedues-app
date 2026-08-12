@@ -513,8 +513,6 @@ export default function EquipementDetailPage() {
             form.date_installation || null,
           date_mise_service:
             form.date_mise_service || null,
-          prochaine_verification:
-            form.prochaine_verification || null,
           observations:
             form.observations.trim() || null,
           type_id: form.type_id,
@@ -1165,7 +1163,7 @@ export default function EquipementDetailPage() {
                 </AppCard>
 
                 <AppCard title="Dates et suivi">
-                  <div className="grid gap-4 md:grid-cols-3">
+                  <div className="grid gap-4 md:grid-cols-2">
                     <AppInput
                       label="Date installation"
                       type="date"
@@ -1194,19 +1192,6 @@ export default function EquipementDetailPage() {
                       }
                     />
 
-                    <AppInput
-                      label="Prochaine vérification"
-                      type="date"
-                      value={
-                        form.prochaine_verification
-                      }
-                      onChange={(event) =>
-                        setField(
-                          "prochaine_verification",
-                          event.target.value
-                        )
-                      }
-                    />
                   </div>
                 </AppCard>
 
@@ -1394,6 +1379,7 @@ export default function EquipementDetailPage() {
           <EquipmentVerifications
             equipementId={equipement.id}
             equipementNom={`${equipement.numero} - ${equipement.nom}`}
+            onRefresh={() => chargerDonnees(true)}
           />
         )}
 

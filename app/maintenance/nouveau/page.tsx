@@ -58,10 +58,6 @@ type FormState = {
   equipement_immobilise: boolean;
   date_remise_service: string;
   technicien: string;
-  planifier: boolean;
-  recurrent: boolean;
-  periodicite_valeur: number;
-  periodicite_unite: "jour" | "semaine" | "mois" | "annee";
 };
 
 const OPTIONS_VIDES: MaintenanceFormOptions = {
@@ -98,10 +94,6 @@ const FORMULAIRE_INITIAL: FormState = {
   equipement_immobilise: false,
   date_remise_service: "",
   technicien: "",
-  planifier: true,
-  recurrent: false,
-  periodicite_valeur: 1,
-  periodicite_unite: "annee",
 };
 
 const TAILLE_MAX = 25 * 1024 * 1024;
@@ -173,6 +165,9 @@ export default function NouvelleMaintenancePage() {
 
   const [options, setOptions] = useState<MaintenanceFormOptions>(OPTIONS_VIDES);
   const [formulaire, setFormulaire] = useState<FormState>(FORMULAIRE_INITIAL);
+  const [lotSelectionne, setLotSelectionne] = useState("Tous");
+  const [lotsEquipements, setLotsEquipements] = useState<string[]>([]);
+  const [equipementLots, setEquipementLots] = useState<Record<string, string | null>>({});
   const [fichiers, setFichiers] = useState<File[]>([]);
   const [chargement, setChargement] = useState(true);
   const [enregistrement, setEnregistrement] = useState(false);
@@ -186,6 +181,9 @@ export default function NouvelleMaintenancePage() {
 
       if (vueTousMagasins || !magasinActif) {
         setOptions(OPTIONS_VIDES);
+        setLotsEquipements([]);
+        setEquipementLots({});
+        setLotSelectionne("Tous");
         setChargement(false);
         setErreur(
           vueTousMagasins
@@ -205,6 +203,39 @@ export default function NouvelleMaintenancePage() {
         });
 
         setOptions(donnees);
+
+        const { data: lotsData, error: lotsError } =
+          await supabase
+            .from("equipements")
+            .select("id, lot")
+            .eq("magasin_id", magasinActif.id);
+
+        if (lotsError) {
+          throw lotsError;
+        }
+
+        const lotsMap: Record<string, string | null> = {};
+        const lots = new Set<string>();
+
+        for (const item of lotsData ?? []) {
+          const lot =
+            typeof item.lot === "string" && item.lot.trim()
+              ? item.lot.trim()
+              : null;
+
+          lotsMap[String(item.id)] = lot;
+
+          if (lot) {
+            lots.add(lot);
+          }
+        }
+
+        setEquipementLots(lotsMap);
+        setLotsEquipements(
+          Array.from(lots).sort((a, b) =>
+            a.localeCompare(b, "fr")
+          )
+        );
       } catch (error) {
         setErreur(formatMaintenanceError(error));
       } finally {
@@ -214,6 +245,22 @@ export default function NouvelleMaintenancePage() {
 
     void chargerOptions();
   }, [authLoading, magasinActif?.id, vueTousMagasins]);
+
+  const equipementsFiltresParLot = useMemo(
+    () =>
+      options.equipements.filter((item) => {
+        if (lotSelectionne === "Tous") {
+          return true;
+        }
+
+        if (lotSelectionne === "__SANS_LOT__") {
+          return !equipementLots[item.id];
+        }
+
+        return equipementLots[item.id] === lotSelectionne;
+      }),
+    [equipementLots, lotSelectionne, options.equipements]
+  );
 
   const equipementSelectionne = useMemo(
     () =>
@@ -234,6 +281,24 @@ export default function NouvelleMaintenancePage() {
 
     return manquants;
   }, [options]);
+
+  function changerLot(value: string) {
+    setLotSelectionne(value);
+
+    if (!formulaire.equipement_id) {
+      return;
+    }
+
+    if (
+      value !== "Tous" &&
+      equipementLots[formulaire.equipement_id] !== value
+    ) {
+      setFormulaire((actuel) => ({
+        ...actuel,
+        equipement_id: "",
+      }));
+    }
+  }
 
   function modifierChamp<K extends keyof FormState>(
     champ: K,
@@ -317,8 +382,16 @@ export default function NouvelleMaintenancePage() {
       return;
     }
 
-    if (!formulaire.equipement_id) {
-      setErreur("Sélectionne un équipement.");
+    if (
+      (
+        lotSelectionne === "Tous" ||
+        lotSelectionne === "__SANS_LOT__"
+      ) &&
+      !formulaire.equipement_id
+    ) {
+      setErreur(
+        "Sélectionne un équipement."
+      );
       return;
     }
 
@@ -366,7 +439,12 @@ export default function NouvelleMaintenancePage() {
       const payload: MaintenanceCreateInput = {
         magasin_id: magasinActif.id,
         titre: formulaire.titre.trim(),
-        equipement_id: formulaire.equipement_id,
+        equipement_id: formulaire.equipement_id || null,
+        lot:
+          lotSelectionne !== "Tous" &&
+          lotSelectionne !== "__SANS_LOT__"
+            ? lotSelectionne
+            : null,
         prestataire_id: formulaire.prestataire_id || null,
         type_id: formulaire.type_id,
         priorite_id: formulaire.priorite_id,
@@ -385,62 +463,6 @@ export default function NouvelleMaintenancePage() {
       };
 
       const maintenance = await createMaintenance(payload);
-
-      if (formulaire.planifier) {
-        const datePlanning = new Date(formulaire.date_debut);
-        const dateEvenement = formulaire.date_debut.slice(0, 10);
-        const heureDebut = formulaire.date_debut.slice(11, 16) || null;
-        const heureFin = formulaire.date_fin
-          ? formulaire.date_fin.slice(11, 16) || null
-          : null;
-
-        const prioriteSelectionnee = options.priorites
-          .find((item) => item.id === formulaire.priorite_id)
-          ?.label.toLowerCase();
-
-        const prioritePlanning = prioriteSelectionnee?.includes("criti")
-          ? "critique"
-          : prioriteSelectionnee?.includes("haut")
-            ? "haute"
-            : prioriteSelectionnee?.includes("bass")
-              ? "basse"
-              : "normale";
-
-        if (Number.isNaN(datePlanning.getTime())) {
-          throw new Error("La date de planification est invalide.");
-        }
-
-        const { error: erreurPlanning } = await supabase
-          .from("planning_evenements")
-          .insert({
-            maintenance_id: maintenance.id,
-            magasin_id: magasinActif.id,
-            titre: formulaire.titre.trim(),
-            description: formulaire.description.trim() || null,
-            categorie: "Maintenance",
-            date_evenement: dateEvenement,
-            heure_debut: heureDebut,
-            heure_fin: heureFin,
-            statut: "planifie",
-            priorite: prioritePlanning,
-            equipement_id: formulaire.equipement_id,
-            prestataire_id: formulaire.prestataire_id || null,
-            recurrent: formulaire.recurrent,
-            periodicite_valeur: formulaire.recurrent
-              ? formulaire.periodicite_valeur
-              : null,
-            periodicite_unite: formulaire.recurrent
-              ? formulaire.periodicite_unite
-              : null,
-            actif: true,
-          });
-
-        if (erreurPlanning) {
-          throw new Error(
-            `Maintenance créée, mais impossible de l’ajouter au planning : ${erreurPlanning.message}`
-          );
-        }
-      }
 
       for (let index = 0; index < fichiers.length; index += 1) {
         setProgression(
@@ -573,17 +595,54 @@ export default function NouvelleMaintenancePage() {
               />
 
               <ChampSelect
-                label="Équipement *"
+                label="Lot"
+                value={lotSelectionne}
+                onChange={changerLot}
+                options={[
+                  {
+                    id: "Tous",
+                    label: "Tous les lots",
+                  },
+                  {
+                    id: "__SANS_LOT__",
+                    label: "Sans lot",
+                  },
+                  ...lotsEquipements.map((lot) => ({
+                    id: lot,
+                    label: lot,
+                  })),
+                ]}
+              />
+
+              <ChampSelect
+                label={
+                  lotSelectionne !== "Tous" &&
+                  lotSelectionne !== "__SANS_LOT__"
+                    ? "Équipement (facultatif)"
+                    : "Équipement"
+                }
                 value={formulaire.equipement_id}
                 onChange={(value) => modifierChamp("equipement_id", value)}
-                options={options.equipements.map((item) => ({
+                options={equipementsFiltresParLot.map((item) => ({
                   id: item.id,
                   label: item.numero
                     ? `${item.numero} — ${item.label}`
                     : item.label,
                 }))}
-                placeholder="Sélectionner un équipement"
+                placeholder={
+                  lotSelectionne !== "Tous" &&
+                  lotSelectionne !== "__SANS_LOT__"
+                    ? "Tout le lot"
+                    : "Sélectionner un équipement"
+                }
               />
+
+              {lotSelectionne !== "Tous" &&
+                lotSelectionne !== "__SANS_LOT__" && (
+                  <p className="-mt-2 text-xs text-slate-500 dark:text-slate-400">
+                    Laisse ce champ vide pour créer une maintenance concernant tout le lot « {lotSelectionne} ».
+                  </p>
+                )}
 
               <ChampSelect
                 label="Prestataire"
@@ -688,91 +747,6 @@ export default function NouvelleMaintenancePage() {
                     modifierChamp("date_remise_service", value)
                   }
                 />
-              </div>
-            )}
-          </Section>
-
-          <Section titre="Planification">
-            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-950">
-              <input
-                type="checkbox"
-                checked={formulaire.planifier}
-                onChange={(event) =>
-                  modifierChamp("planifier", event.target.checked)
-                }
-                className="mt-1 h-4 w-4 rounded border-slate-300"
-              />
-              <span>
-                <span className="block text-sm font-medium text-slate-800 dark:text-slate-100">
-                  Ajouter cette maintenance au planning
-                </span>
-                <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">
-                  L’événement sera lié à la fiche maintenance et s’ouvrira directement depuis le calendrier.
-                </span>
-              </span>
-            </label>
-
-            {formulaire.planifier && (
-              <div className="mt-5 rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950/30">
-                <p className="text-sm text-blue-800 dark:text-blue-200">
-                  La date et les heures du planning reprendront les champs « Date de début » et « Date de fin » ci-dessus.
-                </p>
-
-                <label className="mt-4 flex cursor-pointer items-center gap-3 font-medium text-slate-800 dark:text-slate-100">
-                  <input
-                    type="checkbox"
-                    checked={formulaire.recurrent}
-                    onChange={(event) =>
-                      modifierChamp("recurrent", event.target.checked)
-                    }
-                    className="h-4 w-4 rounded border-slate-300"
-                  />
-                  Maintenance récurrente
-                </label>
-
-                {formulaire.recurrent && (
-                  <div className="mt-4 grid gap-5 md:grid-cols-2">
-                    <label>
-                      <span className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-200">
-                        Tous les
-                      </span>
-                      <input
-                        type="number"
-                        min={1}
-                        max={999}
-                        value={formulaire.periodicite_valeur}
-                        onChange={(event) =>
-                          modifierChamp(
-                            "periodicite_valeur",
-                            Math.max(1, Number(event.target.value) || 1)
-                          )
-                        }
-                        className={classeChamp()}
-                      />
-                    </label>
-
-                    <label>
-                      <span className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-200">
-                        Unité
-                      </span>
-                      <select
-                        value={formulaire.periodicite_unite}
-                        onChange={(event) =>
-                          modifierChamp(
-                            "periodicite_unite",
-                            event.target.value as FormState["periodicite_unite"]
-                          )
-                        }
-                        className={classeChamp()}
-                      >
-                        <option value="jour">Jour(s)</option>
-                        <option value="semaine">Semaine(s)</option>
-                        <option value="mois">Mois</option>
-                        <option value="annee">Année(s)</option>
-                      </select>
-                    </label>
-                  </div>
-                )}
               </div>
             )}
           </Section>

@@ -10,14 +10,13 @@ export interface DocumentItem {
   titre: string;
   description: string | null;
 
-   fichier_path?: string | null;
-
   categorie: string;
 
   dossier: string | null;
   sous_dossier: string | null;
 
   fichier_url: string;
+  fichier_path?: string | null;
   fichier_nom: string;
 
   auteur: string | null;
@@ -64,6 +63,11 @@ export interface DocumentItem {
 
   created_at: string | null;
   date_modification: string | null;
+
+  reserve_presente: boolean;
+reserve_description: string | null;
+reserve_levee: boolean;
+reserve_levee_at: string | null;
 }
 
 export interface DocumentFilters {
@@ -100,6 +104,8 @@ export interface CreateDocumentInput {
   sous_dossier?: string | null;
 
   fichier_url: string;
+
+  fichier_path?: string | null;
 
   fichier_nom: string;
 
@@ -140,6 +146,11 @@ export interface CreateDocumentInput {
   signe_par?: string | null;
 
   commentaire_devis?: string | null;
+
+  reserve_presente?: boolean;
+reserve_description?: string | null;
+reserve_levee?: boolean;
+reserve_levee_at?: string | null;
 }
 
 export interface UpdateDocumentInput

@@ -33,6 +33,42 @@ type SidebarSectionProps = {
   onNavigate?: () => void;
 };
 
+const MODULE_PAR_ROUTE: Record<string, string> = {
+  "/dashboard": "dashboard",
+  "/analytics": "analytics",
+  "/consignes": "consignes",
+  "/documents": "documents",
+  "/maintenance": "maintenance",
+  "/investissements": "investissements",
+  "/planning": "planning",
+  "/equipements": "equipements",
+  "/plans": "plans",
+  "/securite": "securite",
+};
+
+function moduleAutorise(
+  href: string,
+  modules: string[] | null
+): boolean {
+  if (!modules) {
+    return true;
+  }
+
+  const entree = Object.entries(
+    MODULE_PAR_ROUTE
+  ).find(
+    ([route]) =>
+      href === route ||
+      href.startsWith(`${route}/`)
+  );
+
+  if (!entree) {
+    return true;
+  }
+
+  return modules.includes(entree[1]);
+}
+
 function SidebarLink({
   item,
   onNavigate,
@@ -145,6 +181,9 @@ function SidebarContent({
     magasin,
   } = useAuth();
 
+  const modulesAutorises =
+    magasin?.modulesAutorises ?? null;
+
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center p-6">
@@ -159,6 +198,16 @@ function SidebarContent({
 
 const accueil = navigation.accueil.filter((item) => {
   if (!can(item.permission)) {
+    return false;
+  }
+
+  if (
+    !estSuperAdmin &&
+    !moduleAutorise(
+      item.href,
+      modulesAutorises
+    )
+  ) {
     return false;
   }
 
@@ -181,14 +230,38 @@ const accueil = navigation.accueil.filter((item) => {
 
 const exploitation = estCollaborateur
   ? []
-  : navigation.exploitation.filter((item) =>
-      can(item.permission)
-    );
+  : navigation.exploitation.filter((item) => {
+      if (!can(item.permission)) {
+        return false;
+      }
+
+      if (
+        !estSuperAdmin &&
+        !moduleAutorise(
+          item.href,
+          modulesAutorises
+        )
+      ) {
+        return false;
+      }
+
+      return true;
+    });
 
 const administration = estCollaborateur
   ? []
   : navigation.administration.filter((item) => {
       if (!can(item.permission)) {
+        return false;
+      }
+
+      if (
+        !estSuperAdmin &&
+        !moduleAutorise(
+          item.href,
+          modulesAutorises
+        )
+      ) {
         return false;
       }
 

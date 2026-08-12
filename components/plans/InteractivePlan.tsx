@@ -13,7 +13,7 @@ import {
   TransformComponent,
   TransformWrapper,
 } from "react-zoom-pan-pinch";
-import { ExternalLink, MapPin } from "lucide-react";
+import { ExternalLink, MapPin, Trash2 } from "lucide-react";
 
 import EquipmentMarker from "@/components/plans/EquipmentMarker";
 import {
@@ -24,6 +24,7 @@ import {
 } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/providers/AuthProvider";
+import { useDialog } from "@/providers/DialogProvider";
 import { useToast } from "@/providers/ToastProvider";
 
 export type Plan = {
@@ -79,6 +80,7 @@ export default function InteractivePlan({
   onRefresh,
 }: Props) {
   const toast = useToast();
+  const dialog = useDialog();
   const planRef = useRef<HTMLDivElement | null>(null);
 
   const [selected, setSelected] =
@@ -103,6 +105,11 @@ export default function InteractivePlan({
   const [
     savingPosition,
     setSavingPosition,
+  ] = useState(false);
+
+  const [
+    removingFromPlan,
+    setRemovingFromPlan,
   ] = useState(false);
 
   const { role } = useAuth();
@@ -302,6 +309,61 @@ export default function InteractivePlan({
     }
 
     setDraggingMarker(true);
+  }
+
+  async function retirerEquipementDuPlan() {
+    if (!selected || !canEdit || removingFromPlan) {
+      return;
+    }
+
+    const confirme = await dialog.delete({
+      title: "Retirer cet équipement du plan ?",
+      itemName: `${selected.numero} - ${selected.nom}`,
+      description:
+        "L’équipement ne sera pas supprimé. Il sera uniquement retiré de ce plan et pourra être repositionné plus tard.",
+    });
+
+    if (!confirme) {
+      return;
+    }
+
+    try {
+      setRemovingFromPlan(true);
+
+      const { error } = await supabase
+        .from("equipements")
+        .update({
+          plan_id: null,
+          position_x: null,
+          position_y: null,
+        })
+        .eq("id", selected.id)
+        .eq("plan_id", plan.id);
+
+      if (error) {
+        throw error;
+      }
+
+      toast.success(
+        "Équipement retiré du plan",
+        `${selected.numero} - ${selected.nom}`
+      );
+
+      setSelected(null);
+      await onRefresh();
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Impossible de retirer l’équipement du plan.";
+
+      toast.error(
+        "Erreur",
+        message
+      );
+    } finally {
+      setRemovingFromPlan(false);
+    }
   }
 
   async function handleDragEnd(
@@ -776,14 +838,31 @@ export default function InteractivePlan({
               </p>
             </div>
 
-            <AppButton
-              onClick={() => {
-                window.location.href = `/equipements/${selected.id}`;
-              }}
-            >
-              <ExternalLink size={16} />
-              Voir la fiche
-            </AppButton>
+            <div className="flex flex-wrap gap-3">
+              <AppButton
+                onClick={() => {
+                  window.location.href = `/equipements/${selected.id}`;
+                }}
+              >
+                <ExternalLink size={16} />
+                Voir la fiche
+              </AppButton>
+
+              {canEdit && (
+                <AppButton
+                  variant="danger"
+                  disabled={removingFromPlan}
+                  onClick={() =>
+                    void retirerEquipementDuPlan()
+                  }
+                >
+                  <Trash2 size={16} />
+                  {removingFromPlan
+                    ? "Suppression..."
+                    : "Supprimer du plan"}
+                </AppButton>
+              )}
+            </div>
           </div>
         )}
       </AppCard>

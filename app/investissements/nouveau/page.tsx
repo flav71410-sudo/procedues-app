@@ -308,86 +308,60 @@ export default function NouveauInvestissementPage() {
   }
 
   async function uploaderFichier(
-    file: File
-  ): Promise<{
-    url: string;
-    path: string;
-  }> {
-    if (!magasinActif?.id) {
-      throw new Error(
-        "Aucun magasin actif."
-      );
-    }
-
-    const fichierNettoye =
-      nettoyerNomFichier(
-        file.name
-      );
-
-    const uniqueId =
-      crypto.randomUUID();
-
-    const storagePath = [
-      magasinActif.id,
-      "investissements",
-      String(
-        formulaire.anneeBudget
-      ),
-      `${uniqueId}-${fichierNettoye}`,
-    ].join("/");
-
-    const {
-      error: uploadError,
-    } =
-      await supabase.storage
-        .from(STORAGE_BUCKET)
-        .upload(
-          storagePath,
-          file,
-          {
-            cacheControl: "3600",
-            upsert: false,
-            contentType:
-              file.type ||
-              undefined,
-          }
-        );
-
-    if (uploadError) {
-      throw new Error(
-        `Erreur lors de l’upload : ${uploadError.message}`
-      );
-    }
-
-    const {
-      data: publicUrlData,
-    } =
-      supabase.storage
-        .from(STORAGE_BUCKET)
-        .getPublicUrl(
-          storagePath
-        );
-
-    const url =
-      publicUrlData.publicUrl;
-
-    if (!url) {
-      await supabase.storage
-        .from(STORAGE_BUCKET)
-        .remove([
-          storagePath,
-        ]);
-
-      throw new Error(
-        "Impossible de récupérer l’URL du fichier."
-      );
-    }
-
-    return {
-      url,
-      path: storagePath,
-    };
+  file: File
+): Promise<{
+  path: string;
+}> {
+  if (!magasinActif?.id) {
+    throw new Error(
+      "Aucun magasin actif."
+    );
   }
+
+  const fichierNettoye =
+    nettoyerNomFichier(
+      file.name
+    );
+
+  const uniqueId =
+    crypto.randomUUID();
+
+  const storagePath = [
+    magasinActif.id,
+    "investissements",
+    String(
+      formulaire.anneeBudget
+    ),
+    `${uniqueId}-${fichierNettoye}`,
+  ].join("/");
+
+  const {
+    error: uploadError,
+  } =
+    await supabase.storage
+      .from(STORAGE_BUCKET)
+      .upload(
+        storagePath,
+        file,
+        {
+          cacheControl: "3600",
+          upsert: false,
+          contentType:
+            file.type ||
+            undefined,
+        }
+      );
+
+  if (uploadError) {
+    throw new Error(
+      `Erreur lors de l’upload : ${uploadError.message}`
+    );
+  }
+
+  return {
+    path: storagePath,
+  };
+}
 
   async function enregistrer(
     event: FormEvent<HTMLFormElement>
@@ -406,6 +380,8 @@ export default function NouveauInvestissementPage() {
       return;
     }
 
+    const fichierSelectionne = fichier;
+
     if (!magasinActif) {
       return;
     }
@@ -421,7 +397,7 @@ export default function NouveauInvestissementPage() {
 
       const upload =
         await uploaderFichier(
-          fichier
+          fichierSelectionne
         );
 
       uploadedPath =
@@ -456,18 +432,21 @@ export default function NouveauInvestissementPage() {
             formulaire.prestataire.trim(),
 
           fichier_nom:
-            fichier.name,
+            fichierSelectionne.name,
 
           fichier_url:
-            upload.url,
+  upload.path,
+
+fichier_path:
+  upload.path,
 
           extension:
             getExtension(
-              fichier.name
+              fichierSelectionne.name
             ),
 
           taille:
-            fichier.size,
+            fichierSelectionne.size,
 
           date_document:
             formulaire.dateDocument,

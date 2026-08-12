@@ -37,6 +37,7 @@ import {
 
 import AppShell from "@/components/AppShell";
 import { useAuth } from "@/providers/AuthProvider";
+import { useDialog } from "@/providers/DialogProvider";
 import { supabase } from "@/lib/supabase";
 
 import {
@@ -379,6 +380,17 @@ function nettoyerNomFichier(
     .replace(/-+/g, "-");
 }
 
+type DocumentPiece = {
+  id: string;
+  document_id: string;
+  magasin_id: string | null;
+  type_piece: "COMPLEMENT" | "LEVEE_RESERVE";
+  fichier_path: string;
+  fichier_nom: string;
+  commentaire: string | null;
+  created_at: string;
+};
+
 type EditionDocumentForm = {
   titre: string;
   description: string;
@@ -398,6 +410,9 @@ type EditionDocumentForm = {
 export default function DocumentDetailPage() {
   const router =
     useRouter();
+
+  const dialog =
+    useDialog();
 
   const params =
     useParams<{
@@ -519,6 +534,14 @@ export default function DocumentDetailPage() {
       null
     );
 
+  const [pieces, setPieces] = useState<DocumentPiece[]>([]);
+  const [pieceFile, setPieceFile] = useState<File | null>(null);
+  const [pieceType, setPieceType] = useState<"COMPLEMENT" | "LEVEE_RESERVE">("COMPLEMENT");
+  const [pieceCommentaire, setPieceCommentaire] = useState("");
+  const [pieceBusy, setPieceBusy] = useState(false);
+  const [reserveBusy, setReserveBusy] = useState(false);
+  const [reserveDescription, setReserveDescription] = useState("");
+
   const [
     formEdition,
     setFormEdition,
@@ -569,7 +592,7 @@ export default function DocumentDetailPage() {
 
         if (
           !vueTousMagasins &&
-          !magasinActif
+          !magasinActif?.id
         ) {
           setDocument(null);
 
@@ -601,50 +624,209 @@ export default function DocumentDetailPage() {
               scope
             );
 
-          const fichierPath =
-            (
-              data as DocumentItem & {
-                fichier_path?: string | null;
-              }
-            ).fichier_path;
+          /*
+ * Compatibilité documents anciens / nouveaux.
+ *
+ * Nouveau système :
+ * fichier_path contient directement
+ * le chemin Storage.
+ *
+ * Ancien système :
+ * fichier_url contient une URL Supabase complète.
+ */
 
-          if (!fichierPath) {
-            throw new Error(
-              "Le chemin privé du fichier est introuvable. Réimporte ce document."
-            );
-          }
+let fichierPath =
+  (
+    data as DocumentItem & {
+      fichier_path?: string | null;
+    }
+  ).fichier_path?.trim() || "";
 
-          const {
-            data: signedData,
-            error: signedError,
-          } =
-            await supabase.storage
-              .from("documents")
-              .createSignedUrl(
-                fichierPath,
-                3600
-              );
+const fichierUrl =
+  data.fichier_url?.trim() || "";
 
-          if (
-            signedError ||
-            !signedData?.signedUrl
-          ) {
-            throw new Error(
-              signedError?.message ||
-                "Impossible de générer l’accès temporaire au fichier."
-            );
-          }
 
-          setSignedUrl(
-            signedData.signedUrl
-          );
+/*
+ * Si fichier_path n'existe pas,
+ * on essaie de récupérer le chemin
+ * depuis l'ancienne URL Supabase.
+ */
+if (
+  !fichierPath &&
+  fichierUrl
+) {
+  const marqueurPublic =
+    "/storage/v1/object/public/documents/";
+
+  const marqueurSigned =
+    "/storage/v1/object/sign/documents/";
+
+  if (
+    fichierUrl.includes(
+      marqueurPublic
+    )
+  ) {
+    fichierPath =
+      decodeURIComponent(
+        fichierUrl
+          .split(
+            marqueurPublic
+          )[1]
+          ?.split("?")[0] ||
+          ""
+      );
+  } else if (
+    fichierUrl.includes(
+      marqueurSigned
+    )
+  ) {
+    fichierPath =
+      decodeURIComponent(
+        fichierUrl
+          .split(
+            marqueurSigned
+          )[1]
+          ?.split("?")[0] ||
+          ""
+      );
+  } else if (
+    !fichierUrl.startsWith(
+      "http://"
+    ) &&
+    !fichierUrl.startsWith(
+      "https://"
+    )
+  ) {
+    /*
+     * Certains documents stockent
+     * déjà directement le chemin
+     * dans fichier_url.
+     */
+    fichierPath =
+      fichierUrl;
+  }
+}
+
+
+/*
+ * Aucun chemin exploitable trouvé.
+ */
+if (!fichierPath) {
+  throw new Error(
+    "Le fichier associé à ce document est introuvable."
+  );
+}
+
+
+/*
+ * Génération d'une URL temporaire sécurisée.
+ */
+const {
+  data: signedData,
+  error: signedError,
+} =
+  await supabase.storage
+    .from("documents")
+    .createSignedUrl(
+      fichierPath,
+      3600
+    );
+
+if (
+  signedError ||
+  !signedData?.signedUrl
+) {
+  throw new Error(
+    signedError?.message ||
+      "Impossible de générer l’accès temporaire au fichier."
+  );
+}
+
+setSignedUrl(
+  signedData.signedUrl
+);
 
           setDocument(data);
+
+          const reserveData =
+            data as DocumentItem & {
+              reserve_description?:
+                string | null;
+            };
+
+          setReserveDescription(
+            reserveData.reserve_description ??
+              ""
+          );
 
           setCommentaire(
             data.commentaire_devis ??
               ""
           );
+
+          /*
+           * IMPORTANT :
+           * la fiche principale est maintenant prête.
+           * On ne bloque plus l'affichage sur le
+           * chargement des pièces complémentaires.
+           */
+          if (!silent) {
+            setLoading(false);
+          }
+
+          /*
+           * Chargement secondaire des justificatifs.
+           * Une erreur ici ne doit jamais empêcher
+           * l'ouverture du document.
+           */
+          void (async () => {
+            try {
+              const {
+                data: piecesData,
+                error: piecesError,
+              } =
+                await supabase
+                  .from(
+                    "document_pieces"
+                  )
+                  .select(
+                    "id, document_id, magasin_id, type_piece, fichier_path, fichier_nom, commentaire, created_at"
+                  )
+                  .eq(
+                    "document_id",
+                    data.id
+                  )
+                  .order(
+                    "created_at",
+                    {
+                      ascending: false,
+                    }
+                  );
+
+              if (piecesError) {
+                console.error(
+                  "Erreur chargement pièces complémentaires :",
+                  piecesError
+                );
+
+                setPieces([]);
+                return;
+              }
+
+              setPieces(
+                (piecesData ?? []) as DocumentPiece[]
+              );
+            } catch (
+              piecesCurrentError
+            ) {
+              console.error(
+                "Erreur chargement pièces complémentaires :",
+                piecesCurrentError
+              );
+
+              setPieces([]);
+            }
+          })();
         } catch (
           currentError
         ) {
@@ -668,7 +850,7 @@ export default function DocumentDetailPage() {
       [
         authLoading,
         documentId,
-        magasinActif,
+        magasinActif?.id,
         scope,
         vueTousMagasins,
       ]
@@ -1237,6 +1419,382 @@ export default function DocumentDetailPage() {
   }
 
   /* =======================================================
+     RÉSERVES + PIÈCES COMPLÉMENTAIRES
+  ======================================================= */
+
+  async function enregistrerReserve(presente: boolean) {
+    if (!document || !canEdit) return;
+
+    try {
+      setReserveBusy(true);
+      setError(null);
+      setSuccess(null);
+
+      const payload = presente
+        ? {
+            reserve_presente: true,
+            reserve_description: reserveDescription.trim() || null,
+            reserve_levee: false,
+            reserve_levee_at: null,
+          }
+        : {
+            reserve_presente: false,
+            reserve_description: null,
+            reserve_levee: false,
+            reserve_levee_at: null,
+          };
+
+      const updated = await updateDocument(
+        document.id,
+        payload as Parameters<typeof updateDocument>[1],
+        scope
+      );
+
+      setDocument(updated);
+      if (!presente) setReserveDescription("");
+      setSuccess(presente ? "Réserve enregistrée." : "Réserve retirée.");
+    } catch (currentError) {
+      setError(messageErreur(currentError));
+    } finally {
+      setReserveBusy(false);
+    }
+  }
+
+  async function enregistrerDescriptionReserve() {
+    if (!document || !canEdit) return;
+
+    try {
+      setReserveBusy(true);
+      setError(null);
+      const updated = await updateDocument(
+        document.id,
+        { reserve_description: reserveDescription.trim() || null } as Parameters<typeof updateDocument>[1],
+        scope
+      );
+      setDocument(updated);
+      setSuccess("Description de la réserve enregistrée.");
+    } catch (currentError) {
+      setError(messageErreur(currentError));
+    } finally {
+      setReserveBusy(false);
+    }
+  }
+
+  async function definirReserveLevee(
+    checked: boolean
+  ) {
+    if (!document || !canEdit) {
+      return;
+    }
+
+    const justificatifPresent =
+      pieces.some(
+        (piece) =>
+          piece.type_piece ===
+          "LEVEE_RESERVE"
+      );
+
+    if (
+      checked &&
+      !justificatifPresent
+    ) {
+      setError(
+        "Ajoute d’abord un justificatif de type « Levée de réserve »."
+      );
+      return;
+    }
+
+    try {
+      setReserveBusy(true);
+      setError(null);
+      setSuccess(null);
+
+      const updated =
+        await updateDocument(
+          document.id,
+          {
+            reserve_presente:
+              true,
+            reserve_levee:
+              checked,
+            reserve_levee_at:
+              checked
+                ? new Date().toISOString()
+                : null,
+          } as Parameters<
+            typeof updateDocument
+          >[1],
+          scope
+        );
+
+      setDocument(updated);
+
+      setSuccess(
+        checked
+          ? "Réserve levée avec justificatif."
+          : "Réserve repassée en non levée."
+      );
+    } catch (currentError) {
+      setError(
+        messageErreur(
+          currentError
+        )
+      );
+    } finally {
+      setReserveBusy(false);
+    }
+  }
+
+  async function ajouterPiece() {
+    if (!document || !canEdit || !pieceFile) {
+      setError("Sélectionne un fichier à ajouter.");
+      return;
+    }
+
+    if (!document.magasin_id) {
+      setError("Le magasin du document est introuvable.");
+      return;
+    }
+
+    let uploadedPath: string | null = null;
+
+    try {
+      setPieceBusy(true);
+      setError(null);
+      setSuccess(null);
+
+      const nomNettoye = nettoyerNomFichier(pieceFile.name);
+      uploadedPath = [
+        document.magasin_id,
+        "pieces",
+        document.id,
+        `${crypto.randomUUID()}-${nomNettoye}`,
+      ].join("/");
+
+      const { error: uploadError } = await supabase.storage
+        .from("documents")
+        .upload(uploadedPath, pieceFile, { cacheControl: "3600", upsert: false });
+
+      if (uploadError) throw new Error(`Erreur d’envoi : ${uploadError.message}`);
+
+      const { data: inserted, error: insertError } = await supabase
+        .from("document_pieces")
+        .insert({
+          document_id: document.id,
+          magasin_id: document.magasin_id,
+          type_piece: pieceType,
+          fichier_path: uploadedPath,
+          fichier_nom: pieceFile.name,
+          commentaire: pieceCommentaire.trim() || null,
+          created_by: user?.id ?? null,
+        })
+        .select("id, document_id, magasin_id, type_piece, fichier_path, fichier_nom, commentaire, created_at")
+        .single();
+
+      if (insertError) throw new Error(`Impossible d'enregistrer la pièce : ${insertError.message}`);
+
+      if (pieceType === "LEVEE_RESERVE") {
+        const updated = await updateDocument(
+          document.id,
+          {
+            reserve_presente: true,
+            reserve_levee: true,
+            reserve_levee_at: new Date().toISOString(),
+          } as Parameters<typeof updateDocument>[1],
+          scope
+        );
+        setDocument(updated);
+      }
+
+      setPieces((current) => [inserted as DocumentPiece, ...current]);
+      setPieceFile(null);
+      setPieceCommentaire("");
+      setPieceType("COMPLEMENT");
+      setSuccess(pieceType === "LEVEE_RESERVE" ? "Pièce de levée ajoutée et réserve marquée comme levée." : "Pièce complémentaire ajoutée.");
+    } catch (currentError) {
+      if (uploadedPath) {
+        await supabase.storage.from("documents").remove([uploadedPath]);
+      }
+      setError(messageErreur(currentError));
+    } finally {
+      setPieceBusy(false);
+    }
+  }
+
+  async function telechargerPiece(piece: DocumentPiece) {
+  try {
+    setError(null);
+
+    const { data, error: signedError } =
+      await supabase.storage
+        .from("documents")
+        .createSignedUrl(
+          piece.fichier_path,
+          120
+        );
+
+    if (
+      signedError ||
+      !data?.signedUrl
+    ) {
+      throw new Error(
+        signedError?.message ||
+          "Impossible d'accéder au fichier."
+      );
+    }
+
+    const extensionPiece =
+      piece.fichier_nom
+        .split(".")
+        .pop()
+        ?.toLowerCase() ?? "";
+
+    const prefixe =
+      piece.type_piece === "LEVEE_RESERVE"
+        ? "Levee-reserve"
+        : "Complement";
+
+    const titreDocument =
+      document?.titre
+        ? nettoyerNomFichier(
+            document.titre
+          )
+        : "Document";
+
+    const nomPiece =
+      nettoyerNomFichier(
+        piece.fichier_nom
+          .replace(
+            /\.[^/.]+$/,
+            ""
+          )
+      );
+
+    const nomTelechargement =
+      `${prefixe}_${titreDocument}_${nomPiece}${
+        extensionPiece
+          ? `.${extensionPiece}`
+          : ""
+      }`;
+
+    const link =
+      window.document.createElement(
+        "a"
+      );
+
+    link.href =
+      data.signedUrl;
+
+    link.download =
+      nomTelechargement;
+
+    link.target =
+      "_blank";
+
+    link.rel =
+      "noopener noreferrer";
+
+    window.document.body.appendChild(
+      link
+    );
+
+    link.click();
+    link.remove();
+  } catch (
+    currentError
+  ) {
+    setError(
+      messageErreur(
+        currentError
+      )
+    );
+  }
+}
+  async function supprimerPiece(
+    piece: DocumentPiece
+  ) {
+    if (!canEdit) {
+      return;
+    }
+
+    const confirmation =
+      await dialog.delete({
+        title:
+          "Supprimer cette pièce ?",
+
+        itemName:
+          piece.fichier_nom,
+
+        description:
+          "La pièce jointe sera définitivement supprimée du document et du stockage. Cette action est irréversible.",
+      });
+
+    if (!confirmation) {
+      return;
+    }
+
+    try {
+      setPieceBusy(true);
+      setError(null);
+      setSuccess(null);
+
+      const {
+        error: dbError,
+      } =
+        await supabase
+          .from("document_pieces")
+          .delete()
+          .eq(
+            "id",
+            piece.id
+          );
+
+      if (dbError) {
+        throw new Error(
+          dbError.message
+        );
+      }
+
+      const {
+        error: storageError,
+      } =
+        await supabase.storage
+          .from("documents")
+          .remove([
+            piece.fichier_path,
+          ]);
+
+      if (storageError) {
+        console.error(
+          "La ligne a été supprimée mais le fichier Storage n'a pas pu être supprimé :",
+          storageError
+        );
+      }
+
+      setPieces(
+        (current) =>
+          current.filter(
+            (item) =>
+              item.id !==
+              piece.id
+          )
+      );
+
+      setSuccess(
+        "Pièce supprimée."
+      );
+    } catch (currentError) {
+      setError(
+        messageErreur(
+          currentError
+        )
+      );
+    } finally {
+      setPieceBusy(false);
+    }
+  }
+
+  /* =======================================================
      DOCUMENT
   ======================================================= */
 
@@ -1270,9 +1828,12 @@ export default function DocumentDetailPage() {
 
     link.href = signedUrl;
 
-    link.download =
-      document?.fichier_nom ||
-      "document";
+    const ext = document ? extension(document) : "";
+    const nomTelechargement = document?.titre
+      ? `${nettoyerNomFichier(document.titre)}${ext ? `.${ext}` : ""}`
+      : document?.fichier_nom || "document";
+
+    link.download = nomTelechargement;
 
     link.target =
       "_blank";
@@ -1773,6 +2334,215 @@ export default function DocumentDetailPage() {
             </div>
           </section>
         )}
+
+        {/* ===============================================
+            RÉSERVES + PIÈCES COMPLÉMENTAIRES
+        =============================================== */}
+
+        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <h2 className="text-xl font-black text-slate-900 dark:text-white">Réserves et pièces complémentaires</h2>
+              <p className="mt-1 text-sm text-slate-500">Ajoute une réserve, un justificatif ou une pièce de levée sans remplacer le document d'origine.</p>
+            </div>
+
+            {(() => {
+              const reserve = document as DocumentItem & {
+                reserve_presente?: boolean;
+                reserve_levee?: boolean;
+                reserve_levee_at?: string | null;
+              };
+
+              if (reserve.reserve_levee) {
+                return <span className="inline-flex rounded-full bg-emerald-100 px-3 py-1.5 text-sm font-bold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">✓ Réserve levée avec justificatif</span>;
+              }
+              if (reserve.reserve_presente) {
+                return <span className="inline-flex rounded-full bg-amber-100 px-3 py-1.5 text-sm font-bold text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">⚠ Réserve présente</span>;
+              }
+              return <span className="inline-flex rounded-full bg-slate-100 px-3 py-1.5 text-sm font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">Aucune réserve</span>;
+            })()}
+          </div>
+
+          <div className="mt-6 grid gap-6 xl:grid-cols-2">
+            <div className="rounded-2xl border border-slate-200 p-5 dark:border-slate-800">
+              <label className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  checked={Boolean((document as DocumentItem & { reserve_presente?: boolean }).reserve_presente)}
+                  disabled={!canEdit || reserveBusy}
+                  onChange={(event) => void enregistrerReserve(event.target.checked)}
+                  className="h-5 w-5 rounded border-slate-300"
+                />
+                <span className="font-bold text-slate-900 dark:text-white">Présence de réserve</span>
+              </label>
+
+              {Boolean((document as DocumentItem & { reserve_presente?: boolean }).reserve_presente) && (
+                <div className="mt-4">
+                  <label>
+                    <span className="mb-2 block text-sm font-bold text-slate-700 dark:text-slate-300">Description de la réserve</span>
+                    <textarea
+                      value={reserveDescription}
+                      onChange={(event) => setReserveDescription(event.target.value)}
+                      disabled={!canEdit}
+                      rows={4}
+                      placeholder="Décris la réserve constatée..."
+                      className="w-full resize-y rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                    />
+                  </label>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      onClick={() => void enregistrerDescriptionReserve()}
+                      disabled={reserveBusy}
+                      className="mt-3 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60 dark:bg-white dark:text-slate-900"
+                    >
+                      {reserveBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                      Enregistrer la réserve
+                    </button>
+                  )}
+
+                  <label
+                    className={`mt-5 flex items-start gap-3 rounded-xl border p-4 ${
+                      Boolean(
+                        (
+                          document as DocumentItem & {
+                            reserve_levee?: boolean;
+                          }
+                        ).reserve_levee
+                      )
+                        ? "border-emerald-300 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/30"
+                        : "border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={Boolean(
+                        (
+                          document as DocumentItem & {
+                            reserve_levee?: boolean;
+                          }
+                        ).reserve_levee
+                      )}
+                      disabled={
+                        !canEdit ||
+                        reserveBusy
+                      }
+                      onChange={(event) =>
+                        void definirReserveLevee(
+                          event.target.checked
+                        )
+                      }
+                      className="mt-0.5 h-5 w-5 rounded border-slate-300 text-emerald-600"
+                    />
+
+                    <div>
+                      <p className="font-bold text-slate-900 dark:text-white">
+                        Réserve levée
+                      </p>
+
+                      <p className="mt-1 text-xs text-slate-500">
+                        La validation nécessite au moins un justificatif ajouté comme « Levée de réserve ».
+                      </p>
+
+                      {Boolean(
+                        (
+                          document as DocumentItem & {
+                            reserve_levee?: boolean;
+                          }
+                        ).reserve_levee
+                      ) &&
+                        pieces.some(
+                          (piece) =>
+                            piece.type_piece ===
+                            "LEVEE_RESERVE"
+                        ) && (
+                          <span className="mt-3 inline-flex items-center gap-2 rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-bold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
+                            <span className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-600 text-[10px] font-black text-white">
+                              ✓
+                            </span>
+                            Réserve levée avec justificatif
+                          </span>
+                        )}
+                    </div>
+                  </label>
+                </div>
+              )}
+            </div>
+
+            {canEdit && (
+              <div className="rounded-2xl border border-slate-200 p-5 dark:border-slate-800">
+                <h3 className="font-bold text-slate-900 dark:text-white">Ajouter une pièce</h3>
+                <div className="mt-4 space-y-3">
+                  <select
+                    value={pieceType}
+                    onChange={(event) => setPieceType(event.target.value as "COMPLEMENT" | "LEVEE_RESERVE")}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                  >
+                    <option value="COMPLEMENT">Pièce complémentaire</option>
+                    <option value="LEVEE_RESERVE">Levée de réserve</option>
+                  </select>
+
+                  <input
+                    type="file"
+                    onChange={(event) => setPieceFile(event.target.files?.[0] ?? null)}
+                    className="block w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm text-slate-700 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:font-semibold dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:file:bg-slate-800"
+                  />
+
+                  <input
+                    value={pieceCommentaire}
+                    onChange={(event) => setPieceCommentaire(event.target.value)}
+                    placeholder="Commentaire (facultatif)"
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => void ajouterPiece()}
+                    disabled={pieceBusy || !pieceFile}
+                    className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {pieceBusy ? <Loader2 className="h-5 w-5 animate-spin" /> : <Upload className="h-5 w-5" />}
+                    Ajouter la pièce
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-6">
+            <h3 className="mb-3 font-bold text-slate-900 dark:text-white">Pièces rattachées ({pieces.length})</h3>
+            {pieces.length === 0 ? (
+              <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500 dark:bg-slate-950">Aucune pièce complémentaire pour ce document.</div>
+            ) : (
+              <div className="space-y-3">
+                {pieces.map((piece) => (
+                  <div key={piece.id} className="flex flex-col gap-3 rounded-xl border border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="break-all font-semibold text-slate-900 dark:text-white">{piece.fichier_nom}</p>
+                        <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${piece.type_piece === "LEVEE_RESERVE" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" : "bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"}`}>
+                          {piece.type_piece === "LEVEE_RESERVE" ? "Levée de réserve" : "Complément"}
+                        </span>
+                      </div>
+                      {piece.commentaire && <p className="mt-1 text-sm text-slate-500">{piece.commentaire}</p>}
+                      <p className="mt-1 text-xs text-slate-400">Ajouté le {formatDateTime(piece.created_at)}</p>
+                    </div>
+                    <div className="flex shrink-0 gap-2">
+                      <button type="button" onClick={() => void telechargerPiece(piece)} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-200">
+                        <Download className="h-4 w-4" /> Télécharger
+                      </button>
+                      {canEdit && (
+                        <button type="button" onClick={() => void supprimerPiece(piece)} disabled={pieceBusy} className="rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-600 disabled:opacity-50 dark:border-red-900 dark:text-red-300">
+                          Supprimer
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
 
         {/* ===============================================
             DOCUMENT + APERÇU

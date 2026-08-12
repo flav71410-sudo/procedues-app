@@ -142,14 +142,41 @@ export default function EquipmentPhotos({
       {canEdit && (
         <AppCard title="Ajouter une photo">
         <div className="flex flex-col gap-4 md:flex-row">
-          <input
-            type="file"
-            accept="image/*"
-            onChange={(e) =>
-              setPhotoFile(e.target.files?.[0] ?? null)
-            }
-            className="block w-full rounded-xl border border-gray-300 px-3 py-2 dark:border-slate-700 dark:bg-slate-900"
-          />
+          <div className="grid w-full gap-3 sm:grid-cols-2">
+            <label className="cursor-pointer rounded-xl border border-gray-300 px-4 py-3 text-center text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">
+              📷 Prendre une photo
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={(e) =>
+                  setPhotoFile(e.target.files?.[0] ?? null)
+                }
+                className="hidden"
+              />
+            </label>
+
+            <label className="cursor-pointer rounded-xl border border-gray-300 px-4 py-3 text-center text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">
+              🖼️ Choisir une photo
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) =>
+                  setPhotoFile(e.target.files?.[0] ?? null)
+                }
+                className="hidden"
+              />
+            </label>
+
+            {photoFile && (
+              <div className="sm:col-span-2 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:bg-slate-900 dark:text-slate-300">
+                Photo sélectionnée :{" "}
+                <span className="font-semibold">
+                  {photoFile.name}
+                </span>
+              </div>
+            )}
+          </div>
 
           <AppButton
             loading={loading}

@@ -10,7 +10,8 @@ export type Maintenance = {
   numero: string;
   magasin_id: string;
 
-  equipement_id: string;
+  equipement_id: string | null;
+  lot: string | null;
   prestataire_id: string | null;
 
   type_id: string;
@@ -107,7 +108,8 @@ export type MaintenanceCreateInput = {
   titre: string;
   magasin_id?: string;
 
-  equipement_id: string;
+  equipement_id: string | null;
+  lot?: string | null;
   prestataire_id?: string | null;
 
   type_id: string;
@@ -286,7 +288,13 @@ function preparerDonneesMaintenance(
   }
 
   if ("equipement_id" in donnees) {
-    resultat.equipement_id = donnees.equipement_id;
+    resultat.equipement_id =
+      donnees.equipement_id || null;
+  }
+
+  if ("lot" in donnees) {
+    resultat.lot =
+      normaliserTexte(donnees.lot);
   }
 
   if ("prestataire_id" in donnees) {
@@ -562,9 +570,9 @@ export async function getMaintenances(
 
   return ((maintenanceResponse.data ?? []) as Maintenance[]).map(
     (maintenance) => {
-      const equipement = equipementsMap.get(
-        maintenance.equipement_id
-      );
+      const equipement = maintenance.equipement_id
+        ? equipementsMap.get(maintenance.equipement_id)
+        : undefined;
 
       const prestataire = maintenance.prestataire_id
         ? prestatairesMap.get(maintenance.prestataire_id)
@@ -573,7 +581,10 @@ export async function getMaintenances(
       return {
         ...maintenance,
         equipement_label:
-          equipement?.label ?? "Équipement inconnu",
+          equipement?.label ??
+          (maintenance.lot
+            ? `Lot : ${maintenance.lot}`
+            : "Aucun équipement"),
         equipement_numero:
           equipement?.numero ?? null,
         prestataire_label:
@@ -661,7 +672,10 @@ export async function getMaintenance(
     ...maintenance,
 
     equipement_label:
-      equipement?.label ?? "Équipement inconnu",
+      equipement?.label ??
+      (maintenance.lot
+        ? `Lot : ${maintenance.lot}`
+        : "Aucun équipement"),
 
     equipement_numero:
       equipement?.numero ?? null,
@@ -702,8 +716,13 @@ export async function createMaintenance(
     throw new Error("Le titre de la maintenance est obligatoire.");
   }
 
-  if (!donnees.equipement_id) {
-    throw new Error("L'équipement est obligatoire.");
+  if (
+    !donnees.equipement_id &&
+    !donnees.lot?.trim()
+  ) {
+    throw new Error(
+      "Sélectionne un équipement ou un lot."
+    );
   }
 
   if (!donnees.type_id) {
@@ -776,73 +795,31 @@ export async function updateMaintenance(
   }
 
   // Synchronisation automatique Maintenance -> Planning
-  const planningPayload: Record<string, unknown> = {
-    updated_at: new Date().toISOString(),
-  };
-
-  // Synchroniser la date / heure si elles ont été modifiées.
   if ("date_debut" in donnees && donnees.date_debut) {
     const date = new Date(donnees.date_debut);
 
     if (!Number.isNaN(date.getTime())) {
-      planningPayload.date_evenement = donnees.date_debut.slice(0, 10);
-      planningPayload.heure_debut =
+      const dateEvenement = donnees.date_debut.slice(0, 10);
+
+      const heureDebut =
         donnees.date_debut.length >= 16
           ? donnees.date_debut.slice(11, 16)
           : null;
-    }
-  }
 
-  // Synchroniser le statut de la maintenance avec le planning.
-  // On récupère le référentiel correspondant au statut_id afin de ne pas
-  // dépendre d'un UUID spécifique.
-  if ("statut_id" in donnees && donnees.statut_id) {
-    const { data: statutReferentiel, error: statutError } = await supabase
-      .from("referentiels")
-      .select("*")
-      .eq("id", donnees.statut_id)
-      .single();
+      const { error: planningError } = await supabase
+        .from("planning_evenements")
+        .update({
+          date_evenement: dateEvenement,
+          heure_debut: heureDebut,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("maintenance_id", id);
 
-    if (statutError) {
-      throw new Error(
-        `Maintenance modifiée, mais impossible de lire son statut pour synchroniser le planning : ${statutError.message}`
-      );
-    }
-
-    const statutLigne =
-      (statutReferentiel ?? {}) as Record<string, unknown>;
-
-    const statutTexte = nettoyerCategorie(
-      normaliserTexte(statutLigne.code) ??
-        obtenirLabel(statutLigne, "")
-    );
-
-    const estTerminee =
-      statutTexte === "termine" ||
-      statutTexte === "terminee" ||
-      statutTexte.includes("termine") ||
-      statutTexte.includes("terminee") ||
-      statutTexte === "cloture" ||
-      statutTexte === "cloturee" ||
-      statutTexte.includes("clotur");
-
-    if (estTerminee) {
-      planningPayload.statut = "termine";
-    }
-  }
-
-  // On ne lance la mise à jour que si autre chose que updated_at
-  // doit réellement être synchronisé.
-  if (Object.keys(planningPayload).length > 1) {
-    const { error: planningError } = await supabase
-      .from("planning_evenements")
-      .update(planningPayload)
-      .eq("maintenance_id", id);
-
-    if (planningError) {
-      throw new Error(
-        `Maintenance modifiée, mais impossible de synchroniser le planning : ${planningError.message}`
-      );
+      if (planningError) {
+        throw new Error(
+          `Maintenance modifiée, mais impossible de synchroniser le planning : ${planningError.message}`
+        );
+      }
     }
   }
 

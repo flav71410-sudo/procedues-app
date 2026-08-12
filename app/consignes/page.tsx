@@ -25,10 +25,12 @@ import {
 } from "lucide-react";
 
 import AppShell from "@/components/AppShell";
+import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/providers/AuthProvider";
 import { useDialog } from "@/providers/DialogProvider";
 import {
   deleteConsigne,
+  deleteConsigneDefinitivement,
   getConsignes,
   getConsigneStats,
   restoreConsigne,
@@ -128,6 +130,44 @@ function typeApercuFichier(
   return "autre";
 }
 
+
+const CONSIGNES_BUCKET = "consignes-files";
+
+function cheminStorageConsigne(value: string | null | undefined): string | null {
+  if (!value) return null;
+
+  if (!value.startsWith("http://") && !value.startsWith("https://")) {
+    return value.replace(/^\/+/, "");
+  }
+
+  const marqueur = `/storage/v1/object/public/${CONSIGNES_BUCKET}/`;
+  const index = value.indexOf(marqueur);
+
+  if (index >= 0) {
+    return decodeURIComponent(value.slice(index + marqueur.length));
+  }
+
+  return null;
+}
+
+async function urlSigneeConsigne(
+  value: string | null | undefined
+): Promise<string | null> {
+  const path = cheminStorageConsigne(value);
+  if (!path) return null;
+
+  const { data, error } = await supabase.storage
+    .from(CONSIGNES_BUCKET)
+    .createSignedUrl(path, 60 * 60);
+
+  if (error) {
+    console.error("Erreur URL signée consigne :", error);
+    return null;
+  }
+
+  return data.signedUrl;
+}
+
 export default function ConsignesPage() {
   const router = useRouter();
   const dialog = useDialog();
@@ -174,6 +214,9 @@ const canDelete = can("consignes.delete");
   const [previewId, setPreviewId] =
     useState<string | null>(null);
 
+  const [signedUrls, setSignedUrls] =
+    useState<Record<string, string>>({});
+
   const charger = useCallback(
     async (silent = false) => {
       if (authLoading) {
@@ -213,11 +256,29 @@ const canDelete = can("consignes.delete");
 
         setConsignes(consignesData);
         setStats(statsData);
+
+        const fichiers = consignesData.filter(
+          (item) => Boolean(item.fichier_url)
+        );
+
+        const entries = await Promise.all(
+          fichiers.map(async (item) => {
+            const url = await urlSigneeConsigne(item.fichier_url);
+            return [item.id, url] as const;
+          })
+        );
+
+        setSignedUrls(
+          Object.fromEntries(
+            entries.filter(([, url]) => Boolean(url))
+          ) as Record<string, string>
+        );
       } catch (currentError) {
         console.error(
           "Erreur chargement consignes :",
           currentError
         );
+
 
         setError(messageErreur(currentError));
         setConsignes([]);
@@ -312,10 +373,10 @@ const canDelete = can("consignes.delete");
     }
 
     const confirmed = await dialog.delete({
-      title: "Supprimer cette consigne ?",
+      title: "Archiver cette consigne ?",
       itemName: consigne.titre,
       description:
-        "La consigne et son éventuel fichier joint seront définitivement supprimés.",
+        "La consigne sera déplacée dans les archives et pourra être restaurée ultérieurement.",
     });
 
     if (!confirmed) return;
@@ -336,6 +397,50 @@ const canDelete = can("consignes.delete");
       setBusyId(null);
     }
   }
+  async function supprimerDefinitivement(
+  consigne: Consigne
+) {
+  if (!canDelete) {
+    setError(
+      "Tu n’as pas l’autorisation de supprimer définitivement une consigne."
+    );
+    return;
+  }
+
+  const confirmed = await dialog.delete({
+    title: "Supprimer définitivement cette archive ?",
+    itemName: consigne.titre,
+    description:
+      "Cette action est définitive. La consigne archivée sera supprimée et ne pourra plus être restaurée.",
+  });
+
+  if (!confirmed) {
+    return;
+  }
+
+  try {
+    setBusyId(consigne.id);
+    setError(null);
+
+    await deleteConsigneDefinitivement(
+      consigne.id,
+      {
+        magasinId:
+          magasinActif?.id ?? null,
+        tousMagasins:
+          vueTousMagasins,
+      }
+    );
+
+    await charger(true);
+  } catch (currentError) {
+    setError(
+      messageErreur(currentError)
+    );
+  } finally {
+    setBusyId(null);
+  }
+}
 
   async function restaurer(
     consigne: Consigne
@@ -769,59 +874,61 @@ const canDelete = can("consignes.delete");
                         Ouvrir
                       </button>
 
-                      {consigne.actif === false &&
-                        canEdit && (
-                          <button
-                            type="button"
-                            disabled={
-                              busyId ===
-                              consigne.id
-                            }
-                            onClick={() =>
-                              void restaurer(
-                                consigne
-                              )
-                            }
-                            className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50"
-                          >
-                            {busyId ===
-                            consigne.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <ArchiveRestore className="h-4 w-4" />
-                            )}
-                            Restaurer
-                          </button>
-                        )}
+                      {/* ACTIVE : ARCHIVER */}
+                      {consigne.actif !== false && canDelete && (
+                        <button
+                          type="button"
+                          disabled={busyId === consigne.id}
+                          onClick={() => void supprimer(consigne)}
+                          className="inline-flex items-center gap-2 rounded-xl bg-amber-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:opacity-50"
+                        >
+                          {busyId === consigne.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
+                          Archiver
+                        </button>
+                      )}
 
-                      {consigne.actif !== false &&
-                        canDelete && (
-                          <button
-                            type="button"
-                            disabled={
-                              busyId ===
-                              consigne.id
-                            }
-                            onClick={() =>
-                              void supprimer(
-                                consigne
-                              )
-                            }
-                            className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-50"
-                          >
-                            {busyId ===
-                            consigne.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <Trash2 className="h-4 w-4" />
-                            )}
-                            Supprimer
-                          </button>
-                        )}
-                    </div>
+                      {/* ARCHIVÉE : RESTAURER */}
+                      {consigne.actif === false && canEdit && (
+                        <button
+                          type="button"
+                          disabled={busyId === consigne.id}
+                          onClick={() => void restaurer(consigne)}
+                          className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50"
+                        >
+                          {busyId === consigne.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <ArchiveRestore className="h-4 w-4" />
+                          )}
+                          Restaurer
+                        </button>
+                      )}
+
+                      {/* ARCHIVÉE : SUPPRIMER DÉFINITIVEMENT */}
+                      {consigne.actif === false && canDelete && (
+                        <button
+                          type="button"
+                          disabled={busyId === consigne.id}
+                          onClick={() => void supprimerDefinitivement(consigne)}
+                          className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-50"
+                        >
+                          {busyId === consigne.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
+                          Supprimer définitivement
+                        </button>
+                      )}
+
+                                        </div>
                   </div>
 
-                  {previewId === consigne.id && consigne.fichier_url && (
+                  {previewId === consigne.id && signedUrls[consigne.id] && (
                     <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-950">
                       <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-900">
                         <div>
@@ -845,14 +952,14 @@ const canDelete = can("consignes.delete");
 
                       {typeApercuFichier(consigne.fichier_nom) === "pdf" ? (
                         <iframe
-                          src={`${consigne.fichier_url}#toolbar=1&navpanes=0&scrollbar=1`}
+                          src={`${signedUrls[consigne.id]}#toolbar=1&navpanes=0&scrollbar=1`}
                           title={`Aperçu de ${consigne.titre}`}
                           className="h-[65vh] min-h-[520px] w-full border-0 bg-white"
                         />
                       ) : typeApercuFichier(consigne.fichier_nom) === "image" ? (
                         <div className="flex min-h-[420px] items-center justify-center p-4">
                           <img
-                            src={consigne.fichier_url}
+                            src={signedUrls[consigne.id]}
                             alt={consigne.fichier_nom ?? consigne.titre}
                             className="max-h-[70vh] max-w-full rounded-xl object-contain"
                           />

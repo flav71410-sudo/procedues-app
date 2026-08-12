@@ -196,6 +196,9 @@ export default function ActivationKeysPage() {
   const [expiration, setExpiration] =
     useState("");
 
+  const [expirationMode, setExpirationMode] =
+    useState("30");
+
   const [generatedInfo, setGeneratedInfo] =
     useState<GeneratedKeyInfo | null>(null);
 
@@ -271,10 +274,43 @@ export default function ActivationKeysPage() {
     );
   }, [keys]);
 
+  function calculerExpiration(): string | null {
+    if (expirationMode === "none") {
+      return null;
+    }
+
+    if (expirationMode === "custom") {
+      return expiration
+        ? new Date(expiration).toISOString()
+        : null;
+    }
+
+    const jours = Number(expirationMode);
+
+    if (!Number.isFinite(jours)) {
+      return null;
+    }
+
+    const date = new Date();
+    date.setDate(date.getDate() + jours);
+
+    return date.toISOString();
+  }
+
   async function createKey() {
     if (!roleId || !storeId) {
       setError(
         "Sélectionne un rôle et un magasin."
+      );
+      return;
+    }
+
+    if (
+      expirationMode === "custom" &&
+      !expiration
+    ) {
+      setError(
+        "Sélectionne une date d’expiration personnalisée."
       );
       return;
     }
@@ -286,13 +322,14 @@ export default function ActivationKeysPage() {
       setCopied(false);
       setDownloaded(false);
 
+      const expirationIso =
+        calculerExpiration();
+
       const key =
         await generateActivationKey({
           roleId,
           magasinId: storeId,
-          expiration: expiration
-            ? new Date(expiration).toISOString()
-            : null,
+          expiration: expirationIso,
         });
 
       const selectedRole =
@@ -300,10 +337,6 @@ export default function ActivationKeysPage() {
 
       const selectedStore =
         stores.find((item) => item.id === storeId);
-
-      const expirationIso = expiration
-        ? new Date(expiration).toISOString()
-        : null;
 
       const info: GeneratedKeyInfo = {
         code: key,
@@ -316,6 +349,7 @@ export default function ActivationKeysPage() {
 
       setGeneratedInfo(info);
       setExpiration("");
+      setExpirationMode("30");
 
       try {
         await navigator.clipboard.writeText(key);
@@ -640,22 +674,88 @@ export default function ActivationKeysPage() {
               </select>
             </label>
 
-            <label>
-              <span className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-200">
-                Expiration facultative
-              </span>
+            <div>
+              <label>
+                <span className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-200">
+                  Durée de validité
+                </span>
 
-              <input
-                type="datetime-local"
-                value={expiration}
-                onChange={(event) =>
-                  setExpiration(
-                    event.target.value
-                  )
-                }
-                className={fieldClass()}
-              />
-            </label>
+                <select
+                  value={expirationMode}
+                  onChange={(event) => {
+                    setExpirationMode(
+                      event.target.value
+                    );
+
+                    if (
+                      event.target.value !==
+                      "custom"
+                    ) {
+                      setExpiration("");
+                    }
+                  }}
+                  className={fieldClass()}
+                >
+                  <option value="7">
+                    7 jours
+                  </option>
+                  <option value="30">
+                    30 jours
+                  </option>
+                  <option value="90">
+                    90 jours
+                  </option>
+                  <option value="365">
+                    1 an
+                  </option>
+                  <option value="custom">
+                    Date personnalisée
+                  </option>
+                  <option value="none">
+                    Sans expiration
+                  </option>
+                </select>
+              </label>
+
+              {expirationMode === "custom" && (
+                <label className="mt-3 block">
+                  <span className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-200">
+                    Date d’expiration
+                  </span>
+
+                  <input
+                    type="datetime-local"
+                    value={expiration}
+                    min={new Date()
+                      .toISOString()
+                      .slice(0, 16)}
+                    onChange={(event) =>
+                      setExpiration(
+                        event.target.value
+                      )
+                    }
+                    className={fieldClass()}
+                  />
+                </label>
+              )}
+
+              {expirationMode !== "custom" &&
+                expirationMode !== "none" && (
+                  <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                    Expiration automatique {
+                      expirationMode === "365"
+                        ? "dans 1 an"
+                        : `dans ${expirationMode} jours`
+                    }.
+                  </p>
+                )}
+
+              {expirationMode === "none" && (
+                <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+                  Cette clé restera valide jusqu’à son utilisation ou sa désactivation.
+                </p>
+              )}
+            </div>
 
             <button
               type="button"

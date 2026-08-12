@@ -30,7 +30,25 @@ import { useDialog } from "@/providers/DialogProvider";
 type Magasin = {
   id: string;
   nom: string;
+  modules_autorises: string[];
 };
+
+const MODULES_DISPONIBLES = [
+  { id: "dashboard", label: "Tableau de bord" },
+  { id: "analytics", label: "Analytics" },
+  { id: "consignes", label: "Consignes" },
+  { id: "documents", label: "Documents" },
+  { id: "maintenance", label: "Maintenance" },
+  { id: "investissements", label: "Investissements" },
+  { id: "planning", label: "Planning" },
+  { id: "equipements", label: "Équipements" },
+  { id: "plans", label: "Plans" },
+  { id: "securite", label: "Sécurité" },
+];
+
+const MODULES_PAR_DEFAUT = MODULES_DISPONIBLES.map(
+  (module) => module.id
+);
 
 function normaliser(
   value: string
@@ -97,6 +115,13 @@ export default function MagasinsPage() {
     setNom,
   ] =
     useState("");
+
+  const [
+    modulesAutorises,
+    setModulesAutorises,
+  ] = useState<string[]>(
+    MODULES_PAR_DEFAUT
+  );
 
   const [
     magasinModifie,
@@ -189,7 +214,7 @@ export default function MagasinsPage() {
                 "magasins"
               )
               .select(
-                "id, nom"
+                "id, nom, modules_autorises"
               )
               .order(
                 "nom",
@@ -230,9 +255,14 @@ export default function MagasinsPage() {
           }
 
           setMagasins(
-            (
-              data ?? []
-            ) as Magasin[]
+            (data ?? []).map((magasin) => ({
+              id: magasin.id,
+              nom: magasin.nom,
+              modules_autorises:
+                Array.isArray(magasin.modules_autorises)
+                  ? magasin.modules_autorises
+                  : MODULES_PAR_DEFAUT,
+            }))
           );
         } catch (
           error
@@ -342,6 +372,9 @@ export default function MagasinsPage() {
     );
 
     setNom("");
+    setModulesAutorises(
+      MODULES_PAR_DEFAUT
+    );
 
     setErreur(
       null
@@ -363,6 +396,12 @@ export default function MagasinsPage() {
       magasin.nom
     );
 
+    setModulesAutorises(
+      magasin.modules_autorises?.length
+        ? magasin.modules_autorises
+        : MODULES_PAR_DEFAUT
+    );
+
     setErreur(
       null
     );
@@ -378,6 +417,9 @@ export default function MagasinsPage() {
     );
 
     setNom("");
+    setModulesAutorises(
+      MODULES_PAR_DEFAUT
+    );
 
     setErreur(
       null
@@ -387,6 +429,18 @@ export default function MagasinsPage() {
   /* =========================================================
      CREATION / MODIFICATION
   ========================================================= */
+
+  function basculerModule(
+    moduleId: string
+  ) {
+    setModulesAutorises((actuels) =>
+      actuels.includes(moduleId)
+        ? actuels.filter(
+            (item) => item !== moduleId
+          )
+        : [...actuels, moduleId]
+    );
+  }
 
   async function enregistrer(
     event:
@@ -461,15 +515,16 @@ export default function MagasinsPage() {
               "magasins"
             )
             .update({
-              nom:
-                nomNettoye,
+              nom: nomNettoye,
+              modules_autorises:
+                modulesAutorises,
             })
             .eq(
               "id",
               magasinModifie.id
             )
             .select(
-              "id, nom"
+              "id, nom, modules_autorises"
             )
             .single();
 
@@ -518,11 +573,12 @@ export default function MagasinsPage() {
               "magasins"
             )
             .insert({
-              nom:
-                nomNettoye,
+              nom: nomNettoye,
+              modules_autorises:
+                modulesAutorises,
             })
             .select(
-              "id, nom"
+              "id, nom, modules_autorises"
             )
             .single();
 
@@ -1167,6 +1223,48 @@ export default function MagasinsPage() {
 
                 </label>
 
+                <div>
+                  <span className="mb-3 block text-sm font-semibold text-slate-700 dark:text-slate-300">
+                    Modules autorisés
+                  </span>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {MODULES_DISPONIBLES.map(
+                      (module) => {
+                        const actif =
+                          modulesAutorises.includes(
+                            module.id
+                          );
+
+                        return (
+                          <label
+                            key={module.id}
+                            className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 dark:border-slate-700 dark:bg-slate-950"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={actif}
+                              onChange={() =>
+                                basculerModule(
+                                  module.id
+                                )
+                              }
+                              className="h-4 w-4 rounded border-slate-300"
+                            />
+
+                            <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
+                              {module.label}
+                            </span>
+                          </label>
+                        );
+                      }
+                    )}
+                  </div>
+
+                  <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+                    Ces choix seront utilisés ensuite pour masquer les modules non autorisés dans le menu du magasin.
+                  </p>
+                </div>
 
                 <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200">
 

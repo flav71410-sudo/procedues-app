@@ -71,6 +71,7 @@ export default function NouvelEquipementPage() {
   >([]);
   const [prestataires, setPrestataires] =
     useState<Prestataire[]>([]);
+  const [lotsExistants, setLotsExistants] = useState<string[]>([]);
 
   const [chargementReferentiels, setChargementReferentiels] =
     useState(true);
@@ -84,10 +85,10 @@ export default function NouvelEquipementPage() {
     useState("");
   const [emplacement, setEmplacement] =
     useState("");
+  const [lotSelectionne, setLotSelectionne] = useState("");
+  const [nouveauLot, setNouveauLot] = useState("");
   const [fabricant, setFabricant] = useState("");
   const [modele, setModele] = useState("");
-  const [numeroSerie, setNumeroSerie] =
-    useState("");
   const [dateInstallation, setDateInstallation] =
     useState("");
   const [dateMiseService, setDateMiseService] =
@@ -116,6 +117,7 @@ export default function NouvelEquipementPage() {
       setTypes([]);
       setSecteurs([]);
       setPrestataires([]);
+      setLotsExistants([]);
       setChargementReferentiels(false);
       return;
     }
@@ -127,6 +129,7 @@ export default function NouvelEquipementPage() {
         typesResult,
         secteursResult,
         prestatairesResult,
+        lotsResult,
       ] = await Promise.all([
         supabase
           .from("types_equipements")
@@ -144,6 +147,12 @@ export default function NouvelEquipementPage() {
           .select("id, nom")
           .eq("magasin_id", magasinActif.id)
           .order("nom", { ascending: true }),
+
+        supabase
+          .from("equipements")
+          .select("lot")
+          .eq("magasin_id", magasinActif.id)
+          .not("lot", "is", null),
       ]);
 
       if (typesResult.error) {
@@ -158,6 +167,10 @@ export default function NouvelEquipementPage() {
         throw prestatairesResult.error;
       }
 
+      if (lotsResult.error) {
+        throw lotsResult.error;
+      }
+
       setTypes(
         (typesResult.data ?? []) as TypeEquipement[]
       );
@@ -167,6 +180,22 @@ export default function NouvelEquipementPage() {
       setPrestataires(
         (prestatairesResult.data ??
           []) as Prestataire[]
+      );
+
+      setLotsExistants(
+        Array.from(
+          new Set(
+            (lotsResult.data ?? [])
+              .map((item) =>
+                typeof item.lot === "string"
+                  ? item.lot.trim()
+                  : ""
+              )
+              .filter(Boolean)
+          )
+        ).sort((a, b) =>
+          a.localeCompare(b, "fr")
+        )
       );
     } catch (error) {
       console.error(
@@ -191,6 +220,8 @@ export default function NouvelEquipementPage() {
   useEffect(() => {
     setSecteurId("");
     setPrestataireId("");
+    setLotSelectionne("");
+    setNouveauLot("");
 
     void chargerReferentiels();
   }, [chargerReferentiels]);
@@ -236,11 +267,13 @@ export default function NouvelEquipementPage() {
           type_id: typeId,
           secteur_id: secteurId || null,
           prestataire_id: prestataireId || null,
+          lot:
+            (lotSelectionne === "__NOUVEAU__"
+              ? nouveauLot.trim()
+              : lotSelectionne.trim()) || null,
           emplacement: emplacement.trim() || null,
           fabricant: fabricant.trim() || null,
           modele: modele.trim() || null,
-          numero_serie:
-            numeroSerie.trim() || null,
           date_installation:
             dateInstallation || null,
           date_mise_service:
@@ -426,6 +459,42 @@ export default function NouvelEquipementPage() {
             />
 
             <AppSelect
+              label="Lot"
+              value={lotSelectionne}
+              onChange={(event) => {
+                setLotSelectionne(event.target.value);
+                if (event.target.value !== "__NOUVEAU__") {
+                  setNouveauLot("");
+                }
+              }}
+              options={[
+                {
+                  value: "",
+                  label: "Aucun lot",
+                },
+                ...lotsExistants.map((lot) => ({
+                  value: lot,
+                  label: lot,
+                })),
+                {
+                  value: "__NOUVEAU__",
+                  label: "+ Créer un nouveau lot",
+                },
+              ]}
+            />
+
+            {lotSelectionne === "__NOUVEAU__" && (
+              <AppInput
+                label="Nom du nouveau lot"
+                placeholder="Ex. Extincteurs extérieur"
+                value={nouveauLot}
+                onChange={(event) =>
+                  setNouveauLot(event.target.value)
+                }
+              />
+            )}
+
+            <AppSelect
               label="Prestataire"
               value={prestataireId}
               onChange={(event) =>
@@ -468,13 +537,6 @@ export default function NouvelEquipementPage() {
               }
             />
 
-            <AppInput
-              label="N° de série"
-              value={numeroSerie}
-              onChange={(event) =>
-                setNumeroSerie(event.target.value)
-              }
-            />
           </div>
         </AppCard>
 

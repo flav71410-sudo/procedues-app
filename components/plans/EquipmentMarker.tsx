@@ -2,7 +2,6 @@
 
 import { useDraggable } from "@dnd-kit/core";
 import {
-  Camera,
   DoorOpen,
   Droplets,
   Flame,
@@ -43,38 +42,68 @@ export default function EquipmentMarker({
     });
 
   function getIcon() {
-    const currentType = (type || "").toLowerCase();
+    const currentType = (type || "")
+      .normalize("NFD")
+      .replace(/[\\u0300-\\u036f]/g, "")
+      .toLowerCase();
 
-    if (currentType.includes("extincteur")) return <Flame size={18} />;
-    if (currentType.includes("baes")) return <Lightbulb size={18} />;
-    if (currentType.includes("porte")) return <DoorOpen size={18} />;
-
-    if (
-      currentType.includes("caméra") ||
-      currentType.includes("camera")
-    ) {
-      return <Camera size={18} />;
+    if (currentType.includes("extincteur")) {
+      return <Flame size={14} strokeWidth={2.5} />;
     }
-
-    if (currentType.includes("tgbt")) return <Zap size={18} />;
 
     if (
       currentType.includes("ria") ||
       currentType.includes("sprinkler")
     ) {
-      return <Droplets size={18} />;
+      return <Droplets size={14} strokeWidth={2.5} />;
+    }
+
+    if (currentType.includes("baes")) {
+      return <Lightbulb size={14} strokeWidth={2.5} />;
     }
 
     if (
-      currentType.includes("désenfumage") ||
-      currentType.includes("desenfumage")
+      currentType.includes("issue de secours") ||
+      currentType.includes("porte")
     ) {
-      return <Wind size={18} />;
+      return <DoorOpen size={14} strokeWidth={2.5} />;
     }
 
-    if (currentType.includes("ssi")) return <Shield size={18} />;
+    if (
+      currentType.includes("desenfumage") ||
+      currentType.includes("exutoire") ||
+      currentType.includes("lanterneau")
+    ) {
+      return <Wind size={14} strokeWidth={2.5} />;
+    }
 
-    return <Package size={18} />;
+    if (
+      currentType.includes("ssi") ||
+      currentType.includes("alarme") ||
+      currentType.includes("detecteur")
+    ) {
+      return <Shield size={14} strokeWidth={2.5} />;
+    }
+
+    if (
+      currentType.includes("tgbt") ||
+      currentType.includes("electrique")
+    ) {
+      return <Zap size={14} strokeWidth={2.5} />;
+    }
+
+    if (currentType.includes("gondole anti-feu")) {
+      return <Flame size={14} strokeWidth={2.5} />;
+    }
+
+    if (
+      currentType.includes("rideau souple") ||
+      currentType.includes("rideau")
+    ) {
+      return <Shield size={14} strokeWidth={2.5} />;
+    }
+
+    return <Package size={14} strokeWidth={2.5} />;
   }
 
   function markerColor() {
@@ -105,10 +134,10 @@ export default function EquipmentMarker({
       aria-disabled={disabled}
       title={
         disabled
-          ? `${numero} - ${nom} (consultation uniquement)`
-          : `${numero} - ${nom}`
+          ? `${numero} - ${nom}${type ? ` • ${type}` : ""} (consultation uniquement)`
+          : `${numero} - ${nom}${type ? ` • ${type}` : ""}`
       }
-      className={`absolute z-20 flex h-10 w-10 items-center justify-center rounded-full text-white shadow-xl ring-4 ring-white/40 transition ${
+      className={`absolute z-20 flex h-7 w-7 items-center justify-center rounded-full text-white shadow-md ring-2 ring-white/50 transition ${
         disabled
           ? "cursor-default"
           : isDragging

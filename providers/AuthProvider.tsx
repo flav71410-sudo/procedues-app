@@ -24,6 +24,7 @@ import {
 export type MagasinUtilisateur = {
   id: string;
   nom: string;
+  modulesAutorises: string[] | null;
 };
 
 export type ProfilUtilisateur = {
@@ -70,6 +71,12 @@ type AuthContextValue = {
 
 const AuthContext =
   createContext<AuthContextValue | undefined>(undefined);
+
+type MagasinRow = {
+  id: string;
+  nom: string;
+  modules_autorises: string[] | null;
+};
 
 type ProfilRow = {
   id: string;
@@ -191,7 +198,7 @@ export function AuthProvider({
           profilData.magasin_id
             ? supabase
                 .from("magasins")
-                .select("id, nom")
+                .select("id, nom, modules_autorises")
                 .eq("id", profilData.magasin_id)
                 .maybeSingle()
             : Promise.resolve({
@@ -221,6 +228,12 @@ export function AuthProvider({
         ? {
             id: magasinPrincipalResult.data.id,
             nom: magasinPrincipalResult.data.nom,
+            modulesAutorises:
+              Array.isArray(
+                magasinPrincipalResult.data.modules_autorises
+              )
+                ? magasinPrincipalResult.data.modules_autorises
+                : null,
           }
         : null;
 
@@ -230,7 +243,7 @@ export function AuthProvider({
       if (roleNormalise === "SUPER_ADMIN") {
         const { data, error } = await supabase
           .from("magasins")
-          .select("id, nom")
+          .select("id, nom, modules_autorises")
           .order("nom", { ascending: true });
 
         if (error) {
@@ -238,7 +251,18 @@ export function AuthProvider({
         }
 
         magasinsAutorises = trierMagasins(
-          (data ?? []) as MagasinUtilisateur[]
+          ((data ?? []) as MagasinRow[]).map(
+            (magasin) => ({
+              id: magasin.id,
+              nom: magasin.nom,
+              modulesAutorises:
+                Array.isArray(
+                  magasin.modules_autorises
+                )
+                  ? magasin.modules_autorises
+                  : null,
+            })
+          )
         );
       } else if (magasinPrincipal) {
         magasinsAutorises = [magasinPrincipal];

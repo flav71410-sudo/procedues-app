@@ -363,6 +363,28 @@ export async function deleteConsigne(
     throwConsignesError(error);
   }
 }
+export async function deleteConsigneDefinitivement(
+  id: string,
+  scope: ConsigneScope
+): Promise<void> {
+  try {
+    let query = supabase
+      .from("consignes")
+      .delete()
+      .eq("id", id)
+      .eq("actif", false);
+
+    query = applyScope(query, scope);
+
+    const { error } = await query;
+
+    if (error) {
+      throw error;
+    }
+  } catch (error) {
+    throwConsignesError(error);
+  }
+}
 
 export async function restoreConsigne(
   id: string,

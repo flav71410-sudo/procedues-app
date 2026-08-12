@@ -5,6 +5,7 @@ import AppShell from "@/components/AppShell";
 import { supabase } from "@/lib/supabase";
 import { ajouterJournal } from "@/services/journal";
 import { useDialog } from "@/providers/DialogProvider";
+import { useAuth } from "@/providers/AuthProvider";
 
 type Prestataire = {
   id: string;
@@ -16,10 +17,15 @@ type Prestataire = {
   contrat: string | null;
   actif: boolean;
   observations: string | null;
+  magasin_id: string | null;
 };
 
 export default function PrestatairesPage() {
   const dialog = useDialog();
+  const {
+    magasinActif,
+    vueTousMagasins,
+  } = useAuth();
   const [prestataires, setPrestataires] = useState<Prestataire[]>([]);
   const [recherche, setRecherche] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -35,9 +41,18 @@ export default function PrestatairesPage() {
   });
 
   async function chargerPrestataires() {
+    if (
+      vueTousMagasins ||
+      !magasinActif?.id
+    ) {
+      setPrestataires([]);
+      return;
+    }
+
     const { data, error } = await supabase
       .from("prestataires")
       .select("*")
+      .eq("magasin_id", magasinActif.id)
       .order("nom", { ascending: true });
 
     if (error) {
@@ -67,6 +82,16 @@ export default function PrestatairesPage() {
       return;
     }
 
+    if (
+      vueTousMagasins ||
+      !magasinActif?.id
+    ) {
+      alert(
+        "Sélectionne un magasin précis avant d’enregistrer un prestataire."
+      );
+      return;
+    }
+
     if (editingId) {
       const { error } = await supabase
         .from("prestataires")
@@ -78,8 +103,10 @@ export default function PrestatairesPage() {
           domaine: form.domaine.trim() || null,
           contrat: form.contrat.trim() || null,
           observations: form.observations.trim() || null,
+          magasin_id: magasinActif.id,
         })
-        .eq("id", editingId);
+        .eq("id", editingId)
+        .eq("magasin_id", magasinActif.id);
 
       if (error) {
         alert("Erreur modification prestataire.");
@@ -97,6 +124,7 @@ export default function PrestatairesPage() {
         contrat: form.contrat.trim() || null,
         observations: form.observations.trim() || null,
         actif: true,
+        magasin_id: magasinActif.id,
       });
 
       if (error) {
@@ -126,10 +154,18 @@ export default function PrestatairesPage() {
   }
 
   async function basculerActif(p: Prestataire) {
+    if (!magasinActif?.id) {
+      alert("Aucun magasin actif.");
+      return;
+    }
+
+    const magasinId = magasinActif.id;
+
     const { error } = await supabase
       .from("prestataires")
       .update({ actif: !p.actif })
-      .eq("id", p.id);
+      .eq("id", p.id)
+      .eq("magasin_id", magasinId);
 
     if (error) {
       alert("Erreur modification statut.");
@@ -146,6 +182,13 @@ export default function PrestatairesPage() {
   }
 
   async function supprimerPrestataire(p: Prestataire) {
+    if (!magasinActif?.id) {
+      alert("Aucun magasin actif.");
+      return;
+    }
+
+    const magasinId = magasinActif.id;
+
     const confirmation = await dialog.delete({
       title: "Supprimer ce prestataire ?",
       itemName: p.nom,
@@ -158,7 +201,8 @@ export default function PrestatairesPage() {
     const { error } = await supabase
       .from("prestataires")
       .delete()
-      .eq("id", p.id);
+      .eq("id", p.id)
+      .eq("magasin_id", magasinId);
 
     if (error) {
       alert("Erreur suppression prestataire.");
@@ -170,8 +214,11 @@ export default function PrestatairesPage() {
   }
 
   useEffect(() => {
-    chargerPrestataires();
-  }, []);
+    void chargerPrestataires();
+  }, [
+    magasinActif?.id,
+    vueTousMagasins,
+  ]);
 
   const filtres = prestataires.filter((p) => {
     const texte = `${p.nom} ${p.contact || ""} ${p.email || ""} ${p.domaine || ""}`.toLowerCase();

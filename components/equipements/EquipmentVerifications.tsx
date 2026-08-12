@@ -29,6 +29,7 @@ type Verification = {
 type Props = {
   equipementId: string;
   equipementNom: string;
+  onRefresh?: () => void | Promise<void>;
 };
 
 function normaliserTexte(value: string | null | undefined): string {
@@ -42,6 +43,7 @@ function normaliserTexte(value: string | null | undefined): string {
 export default function EquipmentVerifications({
   equipementId,
   equipementNom,
+  onRefresh,
 }: Props) {
   const dialog = useDialog();
   const { can } = useAuth();
@@ -81,23 +83,47 @@ export default function EquipmentVerifications({
   function calculerProchaineDate(date: string, type: TypeVerification) {
     const d = new Date(date);
 
-    if (type.unite === "jour" || type.unite === "jours") {
+    const unite = normaliserTexte(type.unite);
+
+    if (unite === "jour" || unite === "jours") {
       d.setDate(d.getDate() + type.periodicite);
     }
 
-    if (type.unite === "semaine") {
+    if (unite === "semaine" || unite === "semaines") {
       d.setDate(d.getDate() + type.periodicite * 7);
     }
 
-    if (type.unite === "mois") {
+    if (unite === "mois") {
       d.setMonth(d.getMonth() + type.periodicite);
     }
 
-    if (type.unite === "an" || type.unite === "ans") {
+    if (
+      unite === "an" ||
+      unite === "ans" ||
+      unite === "annee" ||
+      unite === "annees"
+    ) {
       d.setFullYear(d.getFullYear() + type.periodicite);
     }
 
     return d.toISOString().split("T")[0];
+  }
+
+  async function mettreAJourProchaineVerification(
+    dateProchaine: string | null
+  ) {
+    const { error } = await supabase
+      .from("equipements")
+      .update({
+        prochaine_verification: dateProchaine,
+      })
+      .eq("id", equipementId);
+
+    if (error) {
+      throw new Error(
+        `La vérification a été enregistrée, mais la prochaine échéance de l’équipement n’a pas pu être mise à jour : ${error.message}`
+      );
+    }
   }
 
   async function terminerEvenementPlanningLie(
@@ -190,6 +216,10 @@ export default function EquipmentVerifications({
     }
 
     try {
+      await mettreAJourProchaineVerification(
+        dateProchaine
+      );
+
       // Une vérification enregistrée correspond à une échéance réalisée :
       // on clôture automatiquement l'événement Planning associé pour
       // éviter qu'il reste en alerte "en retard" sur le tableau de bord.
@@ -228,6 +258,10 @@ export default function EquipmentVerifications({
     setObservations("");
 
     await chargerDonnees();
+
+    if (onRefresh) {
+      await onRefresh();
+    }
   }
 
   async function supprimerVerification(verification: Verification) {
@@ -250,7 +284,42 @@ export default function EquipmentVerifications({
       return;
     }
 
-    chargerDonnees();
+    const { data: restantes, error: restantesError } =
+      await supabase
+        .from("verifications")
+        .select("date_prochaine")
+        .eq("equipement_id", equipementId)
+        .order("date_realisation", {
+          ascending: false,
+        })
+        .limit(1);
+
+    if (restantesError) {
+      alert(restantesError.message);
+      return;
+    }
+
+    const prochaine =
+      restantes?.[0]?.date_prochaine ?? null;
+
+    try {
+      await mettreAJourProchaineVerification(
+        prochaine
+      );
+    } catch (syncError) {
+      alert(
+        syncError instanceof Error
+          ? syncError.message
+          : "Impossible de mettre à jour la prochaine vérification de l’équipement."
+      );
+      return;
+    }
+
+    await chargerDonnees();
+
+    if (onRefresh) {
+      await onRefresh();
+    }
   }
 
   function badgeResultat(resultat: string) {
@@ -303,6 +372,30 @@ export default function EquipmentVerifications({
             value={dateRealisation}
             onChange={(e) => setDateRealisation(e.target.value)}
           />
+
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm dark:border-slate-800 dark:bg-slate-900">
+            <p className="font-semibold text-slate-700 dark:text-slate-200">
+              Prochaine vérification calculée
+            </p>
+            <p className="mt-1 text-slate-500 dark:text-slate-400">
+              {typeId && dateRealisation
+                ? (() => {
+                    const type = types.find(
+                      (item) => item.id === typeId
+                    );
+
+                    return type
+                      ? new Date(
+                          `${calculerProchaineDate(
+                            dateRealisation,
+                            type
+                          )}T12:00:00`
+                        ).toLocaleDateString("fr-FR")
+                      : "—";
+                  })()
+                : "Renseigne le type et la date de réalisation."}
+            </p>
+          </div>
 
           <AppSelect
             label="Résultat"

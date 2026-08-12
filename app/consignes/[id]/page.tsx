@@ -32,6 +32,7 @@ import {
 import AppShell from "@/components/AppShell";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/providers/AuthProvider";
+import { useDialog } from "@/providers/DialogProvider";
 import {
   deleteConsigne,
   getConsigne,
@@ -222,9 +223,44 @@ function versFormulaire(
   };
 }
 
+
+const CONSIGNES_BUCKET = "consignes-files";
+
+function cheminStorageConsigne(value: string | null | undefined): string | null {
+  if (!value) return null;
+
+  if (!value.startsWith("http://") && !value.startsWith("https://")) {
+    return value.replace(/^\/+/, "");
+  }
+
+  const marqueur = `/storage/v1/object/public/${CONSIGNES_BUCKET}/`;
+  const index = value.indexOf(marqueur);
+
+  if (index >= 0) {
+    return decodeURIComponent(value.slice(index + marqueur.length));
+  }
+
+  return null;
+}
+
+async function urlSigneeConsigne(
+  value: string | null | undefined
+): Promise<string | null> {
+  const path = cheminStorageConsigne(value);
+  if (!path) return null;
+
+  const { data, error } = await supabase.storage
+    .from(CONSIGNES_BUCKET)
+    .createSignedUrl(path, 60 * 60);
+
+  if (error) throw error;
+  return data.signedUrl;
+}
+
 export default function ConsigneDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const dialog = useDialog();
   const inputFichierRef =
     useRef<HTMLInputElement | null>(null);
 
@@ -279,6 +315,9 @@ export default function ConsigneDetailPage() {
   const [success, setSuccess] =
     useState<string | null>(null);
 
+  const [fichierSignedUrl, setFichierSignedUrl] =
+    useState<string | null>(null);
+
   const charger = useCallback(async () => {
     if (!id || authLoading) {
       return;
@@ -295,6 +334,14 @@ export default function ConsigneDetailPage() {
 
       setConsigne(data);
       setForm(versFormulaire(data));
+
+      if (data.fichier_url) {
+        setFichierSignedUrl(
+          await urlSigneeConsigne(data.fichier_url)
+        );
+      } else {
+        setFichierSignedUrl(null);
+      }
     } catch (currentError) {
       console.error(
         "Erreur chargement consigne :",
@@ -408,12 +455,8 @@ export default function ConsigneDetailPage() {
       throw uploadError;
     }
 
-    const { data } = supabase.storage
-      .from("consignes-files")
-      .getPublicUrl(path);
-
     return {
-      url: data.publicUrl,
+      url: path,
       nom: nouveauFichier.name,
     };
   }
@@ -519,6 +562,15 @@ export default function ConsigneDetailPage() {
 
       setConsigne(updated);
       setForm(versFormulaire(updated));
+
+      if (updated.fichier_url) {
+        setFichierSignedUrl(
+          await urlSigneeConsigne(updated.fichier_url)
+        );
+      } else {
+        setFichierSignedUrl(null);
+      }
+
       setNouveauFichier(null);
       setModeEdition(false);
       setSuccess(
@@ -543,9 +595,12 @@ export default function ConsigneDetailPage() {
       return;
     }
 
-    const confirmed = window.confirm(
-      `Archiver la consigne « ${consigne.titre} » ?`
-    );
+    const confirmed = await dialog.delete({
+      title: "Archiver cette consigne ?",
+      itemName: consigne.titre,
+      description:
+        "La consigne sera archivée et pourra être restaurée ultérieurement.",
+    });
 
     if (!confirmed) {
       return;
@@ -838,7 +893,7 @@ export default function ConsigneDetailPage() {
               </div>
             </Section>
 
-            {consigne.fichier_url && (
+            {consigne.fichier_url && fichierSignedUrl && (
               <Section title="Fichier joint">
                 <div className="space-y-5">
                   <div className="flex flex-col gap-4 rounded-xl border border-slate-200 p-4 dark:border-slate-700 sm:flex-row sm:items-center sm:justify-between">
@@ -865,7 +920,7 @@ export default function ConsigneDetailPage() {
 
                     <div className="flex flex-wrap gap-2">
                       <a
-                        href={consigne.fichier_url}
+                        href={fichierSignedUrl ?? "#"}
                         target="_blank"
                         rel="noreferrer"
                         className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2 font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
@@ -875,7 +930,7 @@ export default function ConsigneDetailPage() {
                       </a>
 
                       <a
-                        href={consigne.fichier_url}
+                        href={fichierSignedUrl ?? "#"}
                         download
                         className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 font-semibold text-white transition hover:bg-blue-700"
                       >
@@ -898,7 +953,7 @@ export default function ConsigneDetailPage() {
                       </div>
 
                       <iframe
-                        src={`${consigne.fichier_url}#toolbar=1&navpanes=0&scrollbar=1`}
+                        src={`${fichierSignedUrl}#toolbar=1&navpanes=0&scrollbar=1`}
                         title={`Aperçu de ${
                           consigne.fichier_nom ??
                           consigne.titre
@@ -922,7 +977,7 @@ export default function ConsigneDetailPage() {
 
                       <div className="flex justify-center">
                         <img
-                          src={consigne.fichier_url}
+                          src={fichierSignedUrl ?? ""}
                           alt={
                             consigne.fichier_nom ??
                             consigne.titre

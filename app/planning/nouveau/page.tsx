@@ -30,6 +30,7 @@ import type {
   PlanningCreateInput,
   PlanningPeriodicite,
   PlanningPriorite,
+  PlanningRappelUnite,
   PlanningStatut,
 } from "@/types/planning";
 
@@ -58,6 +59,12 @@ type FormState = {
   recurrent: boolean;
   periodicite_valeur: number;
   periodicite_unite: PlanningPeriodicite;
+  rappel_email_active: boolean;
+  rappel_email_delai: number;
+  rappel_email_unite: PlanningRappelUnite;
+  rappel_email_destinataires: string;
+  alerte_active: boolean;
+  alerte_delai_jours: number;
 };
 
 const CATEGORIES = [
@@ -102,6 +109,12 @@ const FORM_INITIAL: FormState = {
   recurrent: false,
   periodicite_valeur: 1,
   periodicite_unite: "annee",
+  rappel_email_active: false,
+  rappel_email_delai: 1,
+  rappel_email_unite: "jour",
+  rappel_email_destinataires: "",
+  alerte_active: true,
+  alerte_delai_jours: 7,
 };
 
 function messageErreur(error: unknown): string {
@@ -348,10 +361,28 @@ export default function NouveauPlanningPage() {
           form.recurrent
             ? form.periodicite_unite
             : null,
-        rappel_email_active: false,
-        rappel_email_delai: null,
-        rappel_email_unite: null,
-        rappel_email_destinataires: null,
+        rappel_email_active:
+          form.rappel_email_active,
+        rappel_email_delai:
+          form.rappel_email_active
+            ? form.rappel_email_delai
+            : null,
+        rappel_email_unite:
+          form.rappel_email_active
+            ? form.rappel_email_unite
+            : null,
+        rappel_email_destinataires:
+          form.rappel_email_active
+            ? form.rappel_email_destinataires
+                .split(/[;,\s]+/)
+                .map((email) => email.trim())
+                .filter(Boolean)
+            : null,
+        alerte_active: form.alerte_active,
+        alerte_delai_jours:
+          form.alerte_active
+            ? form.alerte_delai_jours
+            : 7,
       };
 
       const created =
@@ -728,6 +759,173 @@ export default function NouveauPlanningPage() {
                     },
                   ]}
                 />
+              </div>
+            )}
+          </Section>
+
+          <Section title="Alerte CastoManager">
+            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950/30">
+              <input
+                type="checkbox"
+                checked={form.alerte_active}
+                onChange={(event) =>
+                  setField(
+                    "alerte_active",
+                    event.target.checked
+                  )
+                }
+                className="mt-1 h-4 w-4 rounded border-slate-300"
+              />
+
+              <span>
+                <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                  Afficher une alerte avant l’intervention
+                </span>
+
+                <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">
+                  L’alerte apparaîtra dans le centre de notifications du magasin.
+                </span>
+              </span>
+            </label>
+
+            {form.alerte_active && (
+              <div className="mt-5 max-w-md">
+                <ChampSelect
+                  label="Déclencher l’alerte"
+                  value={String(form.alerte_delai_jours)}
+                  onChange={(value) =>
+                    setField(
+                      "alerte_delai_jours",
+                      Number(value)
+                    )
+                  }
+                  options={[
+                    {
+  value: "1",
+  label: "1 jour avant",
+},
+                    {
+                      value: "2",
+                      label: "2 jours avant",
+                    },
+                    {
+                      value: "3",
+                      label: "3 jours avant",
+                    },
+                    {
+                      value: "5",
+                      label: "5 jours avant",
+                    },
+                    {
+                      value: "7",
+                      label: "1 semaine avant",
+                    },
+                  ]}
+                />
+
+                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                  Par défaut : 1 semaine avant l’intervention.
+                </p>
+              </div>
+            )}
+          </Section>
+
+          <Section title="Rappel par email">
+            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-950">
+              <input
+                type="checkbox"
+                checked={form.rappel_email_active}
+                onChange={(event) =>
+                  setField(
+                    "rappel_email_active",
+                    event.target.checked
+                  )
+                }
+                className="mt-1 h-4 w-4 rounded border-slate-300"
+              />
+
+              <span>
+                <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                  Envoyer un rappel par email
+                </span>
+
+                <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">
+                  Le rappel sera envoyé avant chaque occurrence de l’événement.
+                </span>
+              </span>
+            </label>
+
+            {form.rappel_email_active && (
+              <div className="mt-5 grid gap-5 md:grid-cols-3">
+                <label>
+                  <span className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-200">
+                    Délai avant l’événement
+                  </span>
+
+                  <input
+                    type="number"
+                    min={0}
+                    max={999}
+                    value={form.rappel_email_delai}
+                    onChange={(event) =>
+                      setField(
+                        "rappel_email_delai",
+                        Math.max(
+                          0,
+                          Number(event.target.value) || 0
+                        )
+                      )
+                    }
+                    className={classeChamp()}
+                  />
+                </label>
+
+                <ChampSelect
+                  label="Unité"
+                  value={form.rappel_email_unite}
+                  onChange={(value) =>
+                    setField(
+                      "rappel_email_unite",
+                      value as PlanningRappelUnite
+                    )
+                  }
+                  options={[
+                    {
+                      value: "minute",
+                      label: "Minute(s)",
+                    },
+                    {
+                      value: "heure",
+                      label: "Heure(s)",
+                    },
+                    {
+                      value: "jour",
+                      label: "Jour(s)",
+                    },
+                    {
+                      value: "semaine",
+                      label: "Semaine(s)",
+                    },
+                  ]}
+                />
+
+                <ChampTexte
+                  label="Destinataires"
+                  value={
+                    form.rappel_email_destinataires
+                  }
+                  onChange={(value) =>
+                    setField(
+                      "rappel_email_destinataires",
+                      value
+                    )
+                  }
+                  placeholder="nom@castorama.fr"
+                />
+
+                <p className="text-xs text-slate-500 dark:text-slate-400 md:col-span-3">
+                  Plusieurs adresses peuvent être séparées par une virgule, un point-virgule ou un espace.
+                </p>
               </div>
             )}
           </Section>
