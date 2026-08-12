@@ -13,7 +13,6 @@ import {
   navigation,
   type NavigationItem,
 } from "@/lib/navigation";
-import { roleLabel } from "@/lib/permissions";
 import { useAuth } from "@/providers/AuthProvider";
 
 type SidebarProps = {
@@ -176,7 +175,6 @@ function SidebarContent({
   const {
     can,
     loading,
-    profil,
     role,
     magasin,
   } = useAuth();
@@ -284,13 +282,6 @@ const administration = estCollaborateur
 
   const adminOpen = pathname.startsWith("/admin");
 
-  const nomComplet =
-    [profil?.prenom, profil?.nom]
-      .filter(Boolean)
-      .join(" ") ||
-    profil?.email ||
-    "Utilisateur";
-
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-start justify-between gap-4 px-5 pb-4 pt-5 lg:px-6 lg:pt-6">
@@ -355,25 +346,6 @@ const administration = estCollaborateur
         />
       </nav>
 
-      <div className="shrink-0 px-4 pb-4 pt-3 lg:px-6 lg:pb-6">
-        <div className="rounded-2xl bg-white/10 p-4">
-          <p className="truncate text-sm font-bold">
-            {nomComplet}
-          </p>
-
-          <p className="mt-1 truncate text-xs text-blue-100">
-            {roleLabel(role)}
-          </p>
-
-          <p className="mt-2 flex items-center gap-2 text-xs text-green-200">
-            <span
-              aria-hidden="true"
-              className="h-2 w-2 rounded-full bg-green-300"
-            />
-            Connecté
-          </p>
-        </div>
-      </div>
     </div>
   );
 }

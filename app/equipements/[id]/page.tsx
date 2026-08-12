@@ -150,6 +150,7 @@ function toForm(equipement: Equipement): FormState {
     type_id: equipement.type_id ?? "",
     secteur_id: equipement.secteur_id ?? "",
     prestataire_id: equipement.prestataire_id ?? "",
+    
   };
 }
 

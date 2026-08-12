@@ -22,11 +22,14 @@ import {
   TrendingUp,
   XCircle,
   Printer,
+  Trash2,
 } from "lucide-react";
 
 import AppShell from "@/components/AppShell";
 import { useAuth } from "@/providers/AuthProvider";
+import { useDialog } from "@/providers/DialogProvider";
 import {
+  deleteDocumentPermanently,
   getDevis,
   getDevisStats,
   updateDevisSignature,
@@ -206,6 +209,7 @@ function budgetStorageKey(
 
 export default function InvestissementsPage() {
   const router = useRouter();
+  const dialog = useDialog();
 
   const {
   user,
@@ -944,6 +948,55 @@ function imprimerDevisSelectionnes() {
     }
   }
 
+  async function supprimerInvestissement(
+    item: DocumentItem
+  ) {
+    if (!canManage) {
+      setError(
+        "Tu n’as pas l’autorisation de supprimer cet investissement."
+      );
+      return;
+    }
+
+    const confirmation = await dialog.delete({
+      title: "Supprimer définitivement cet investissement ?",
+      itemName: item.titre,
+      description:
+        "Le document et son fichier associé seront supprimés. Cette action est irréversible.",
+    });
+
+    if (!confirmation) {
+      return;
+    }
+
+    try {
+      setBusyId(item.id);
+      setError(null);
+      setSuccess(null);
+
+      await deleteDocumentPermanently(
+        item.id,
+        scope
+      );
+
+      setDevisSelectionnes((current) =>
+        current.filter((id) => id !== item.id)
+      );
+
+      setSuccess(
+        `L’investissement « ${item.titre} » a été supprimé définitivement.`
+      );
+
+      await charger(true);
+    } catch (currentError) {
+      setError(
+        messageErreur(currentError)
+      );
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   if (authLoading) {
     return (
       <AppShell>
@@ -1676,6 +1729,22 @@ function imprimerDevisSelectionnes() {
                                   Passer en N+1
                                 </option>
                               </select>
+
+                              {canManage && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    void supprimerInvestissement(
+                                      item
+                                    )
+                                  }
+                                  disabled={isBusy}
+                                  className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-3 py-2 font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                  Supprimer
+                                </button>
+                              )}
 
                               {isBusy && (
                                 <Loader2 className="h-5 w-5 animate-spin text-slate-500" />
