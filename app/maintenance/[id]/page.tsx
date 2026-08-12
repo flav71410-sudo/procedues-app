@@ -105,7 +105,7 @@ function formatSize(value: number | null): string {
 function toForm(data: MaintenanceDetail): FormState {
   return {
     titre: data.titre,
-    equipement_id: data.equipement_id,
+    equipement_id: data.equipement_id ?? "",
     prestataire_id: data.prestataire_id ?? "",
     type_id: data.type_id,
     priorite_id: data.priorite_id,
